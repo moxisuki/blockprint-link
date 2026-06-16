@@ -1,8 +1,10 @@
 package io.github.moxisuki.blockprint.link.fabric;
 
+import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
 import io.github.moxisuki.blockprint.link.bridge.ui.QrData;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -24,7 +26,7 @@ public final class QrScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        int bound = io.github.moxisuki.blockprint.link.bridge.BridgeConfig.hotkeyCode();
+        int bound = BridgeConfig.hotkeyCode();
         if (keyCode == 256 || keyCode == bound) { onClose(); return true; }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
@@ -63,7 +65,7 @@ public final class QrScreen extends Screen {
         if (font != null) {
             g.drawString(font, Component.translatable("blockprintlink.ui.title"),
                 bx + 8, by + 4, 0xFFFFFFFF, true);
-            String closeKey = io.github.moxisuki.blockprint.link.bridge.BridgeConfig.hotkeyName();
+            String closeKey = BridgeConfig.hotkeyName();
             String closeHint = closeKey + " / ESC";
             g.drawString(font, closeHint, bx + bw - font.width(closeHint) - 6, by + 4, 0xFFAAAAAA, false);
         }
@@ -97,16 +99,21 @@ public final class QrScreen extends Screen {
         g.renderFakeItem(ICON_IRON,    ix, iy);
         g.renderFakeItem(ICON_GOLD,    ix, iy + rh);
         g.renderFakeItem(ICON_DIAMOND, ix, iy + rh * 2);
-        g.drawString(font, QrData.ipText(),   ix + 18, iy + 4,        QrData.C_TEXT, false);
-        g.drawString(font, QrData.portText(), ix + 18, iy + rh + 4,   QrData.C_TEXT, false);
+        String ipS   = QrData.clean(I18n.get("blockprintlink.overlay.ip",   QrData.ipRaw()));
+        String portS = QrData.clean(I18n.get("blockprintlink.overlay.port", QrData.portRaw()));
+        String tS     = QrData.clean(I18n.get("blockprintlink.overlay.token", QrData.tokenRaw()));
+        String keyS   = QrData.clean(I18n.get("blockprintlink.overlay.hotkey_hint",
+            BridgeConfig.hotkeyName()));
 
-        String tText = QrData.tokenText();
-        tokenX = ix + 18; tokenY = iy + rh * 2 + 4; tokenW = font.width(tText);
+        g.drawString(font, ipS,   ix + 18, iy + 4,        QrData.C_TEXT, false);
+        g.drawString(font, portS, ix + 18, iy + rh + 4,   QrData.C_TEXT, false);
+
+        tokenX = ix + 18; tokenY = iy + rh * 2 + 4; tokenW = font.width(tS);
         hoverCopy = mx >= tokenX && mx <= tokenX + tokenW && my >= tokenY - 1 && my <= tokenY + 10;
-        g.drawString(font, tText, tokenX, tokenY, hoverCopy ? 0xFF00BCD4 : QrData.C_TEXT, false);
+        g.drawString(font, tS, tokenX, tokenY, hoverCopy ? 0xFF00BCD4 : QrData.C_TEXT, false);
         if (hoverCopy) g.drawString(font, " ⚡", tokenX + tokenW, tokenY, 0xFF00BCD4, false);
 
-        g.drawString(font, QrData.keyText(), bx + bw / 2 - font.width(QrData.keyText()) / 2,
+        g.drawString(font, keyS, bx + bw / 2 - font.width(keyS) / 2,
             iy + rh * 3 + 4, QrData.C_TEXT_DIM, false);
 
         int fy = by + bh - 14;
