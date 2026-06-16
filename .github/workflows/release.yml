@@ -27,7 +27,8 @@ jobs:
             jdk: 21
           - name: neoforge-26.1.2
             task: ':neoforge-1_26_1_2:jar'
-            jdk: 26
+            jdk: 21
+            jdk-toolchain: 26
           - name: forge-1.20.1
             task: ':forge-1_20_1:jar'
             jdk: 21
@@ -49,6 +50,13 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
+
+      - name: Setup JDK ${{ matrix.jdk-toolchain }} (toolchain)
+        if: ${{ matrix.jdk-toolchain }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk-toolchain }}
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
