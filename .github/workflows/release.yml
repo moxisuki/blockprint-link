@@ -88,7 +88,9 @@ jobs:
 
       - name: Build (standalone)
         working-directory: fabric-1_26_1_2
-        run: ./gradlew jar --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew jar --no-daemon
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
