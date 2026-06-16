@@ -27,9 +27,7 @@ jobs:
             jdk: 21
           - name: neoforge-26.1.2
             task: ':neoforge-1_26_1_2:jar'
-            jdk: 21
-            env:
-              JAVA_TOOLCHAIN_26: /opt/hostedtoolcache/jdk/26.0.1/x64
+            jdk: 26
           - name: forge-1.20.1
             task: ':forge-1_20_1:jar'
             jdk: 21
