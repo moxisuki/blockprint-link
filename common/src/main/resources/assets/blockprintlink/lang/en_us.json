@@ -1,0 +1,24 @@
+{
+  "blockprintlink.chat.loaded": "§a[%s] §fLoaded §7v%s",
+  "blockprintlink.chat.token_info": "§eToken: §f%s §7| %s to Show/Hide QR §7| /blockprint-reload = refresh",
+
+  "blockprintlink.overlay.ip": "§7IP: §f%s",
+  "blockprintlink.overlay.port": "§7Port: §f%s",
+  "blockprintlink.overlay.token": "§7Token: §f%s",
+  "blockprintlink.overlay.hotkey_hint": "§7[%s] Show/Hide",
+
+  "blockprintlink.overlay.qr_failed_header": "§c[bridge] QR failed; raw:",
+  "blockprintlink.overlay.qr_failed_ip": "§7IP: §f%s",
+  "blockprintlink.overlay.qr_failed_port": "§7Port: §f%s",
+  "blockprintlink.overlay.qr_failed_token": "§7Token: §f%s",
+
+  "key.blockprintlink.toggle_bridge_qr": "Show/Hide Bridge QR",
+  "blockprintlink.ui.title": "BlockPrint Link",
+  "blockprintlink.ui.close_hint": "ESC",
+  "blockprintlink.ui.footer": "BlockPrint Bridge",
+  "blockprintlink.ui.version": "MC %s",
+  "blockprintlink.ui.copied": "Connection URL copied to clipboard",
+
+  "key.category.blockprintlink.blockprintlink": "BlockPrint Link",
+  "key.categories.blockprintlink": "BlockPrint Link"
+}

@@ -1,0 +1,49 @@
+pluginManagement {
+    repositories {
+        // Plain maven repos: exclusiveContent breaks legacy buildscript
+        // repos (forge-1_20_1's ForgeGradle 6.x needs them), and
+        // includeGroup was too narrow for Fabric's subgroup publishes
+        // anyway. Gradle 8.14 resolves in declaration order.
+        maven { name = 'Fabric';  url = uri('https://maven.fabricmc.net') }
+        maven { name = 'Forge';   url = uri('https://maven.minecraftforge.net') }
+        maven { name = 'NeoForged'; url = uri('https://maven.neoforged.net/releases') }
+        maven { name = 'Sponge';  url = uri('https://repo.spongepowered.org/repository/maven-public') }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+    // NGD 1.x doesn't publish a Gradle plugin marker. The plugin id is
+    // still `net.neoforged.moddev` (same as 2.x) but the artifact
+    // coordinates differ — `moddev-gradle:1.0.24` vs `moddev:2.x`.
+    // Map the id to the right jar so the modern `plugins {}` block
+    // works for 1.20.6's NGD 1.0.24 (if that subproject ever comes back).
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == 'net.neoforged.moddev'
+                    && requested.version == '1.0.24') {
+                useModule("net.neoforged:moddev-gradle:${requested.version}")
+            }
+        }
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+// This should match the folder name of the project, or else IDEA may complain (see https://youtrack.jetbrains.com/issue/IDEA-317606)
+rootProject.name = 'blockprintlink'
+include('common')
+include('fabric-1_21_1')
+include('neoforge-1_21_1')
+include('fabric-1_21_4')
+include('neoforge-1_21_4')
+include('fabric-1_21_8')
+include('neoforge-1_21_8')
+// 1.20.6 NeoForge is intentionally unsupported: NGD 2.x's variant model
+// needs `neoforge-dependencies` which NeoForge 20.6.x never published;
+// NGD 1.x works for 20.6.x but conflicts with 2.x on the same build
+// classpath. Skip it.
+include('forge-1_20_1')
+include('forge-1_21_1')
+include('fabric-1_26_1_2')
+include('neoforge-1_26_1_2')

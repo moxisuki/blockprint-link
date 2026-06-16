@@ -1,0 +1,59 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+base.archivesName = "${mod_id}-fabric-${minecraft_version}"
+
+repositories {
+    mavenLocal()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // jar-in-jar: implementation for compile-time, include for runtime bundle
+    implementation include("io.github.moxisuki:blockprint-core-jvm:0.1.7")
+    implementation include("com.google.zxing:core:3.5.3")
+}
+
+// Wire common sources from parent directory — exclude files that
+// use GuiGraphics (renamed to GuiGraphicsExtractor in 26.x).
+def commonDir = file('../common')
+tasks.named('compileJava', JavaCompile).configure {
+    source fileTree(dir: new File(commonDir, 'src/main/java'))
+    exclude 'io/github/moxisuki/blockprint/link/bridge/ui/QrHudRenderer.java'
+    exclude 'io/github/moxisuki/blockprint/link/bridge/ui/UiHooks.java'
+}
+processResources {
+    from new File(commonDir, 'src/main/resources')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Expand fabric.mod.json placeholders
+    filesMatching('fabric.mod.json') {
+        expand project.properties
+    }
+}
+
+loom {
+    splitEnvironmentSourceSets()
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+    runs {
+        client { client(); setConfigName('Fabric Client'); ideConfigGenerated(true); runDir('runs/client') }
+        server { server(); setConfigName('Fabric Server'); ideConfigGenerated(true); runDir('runs/server') }
+    }
+}

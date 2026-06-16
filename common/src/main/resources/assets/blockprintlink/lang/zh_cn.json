@@ -1,0 +1,24 @@
+{
+  "blockprintlink.chat.loaded": "§a[%s] §f已加载 §7v%s",
+  "blockprintlink.chat.token_info": "§e连接令牌: §f%s §7| 按 %s 显示/隐藏二维码 §7| /blockprint-reload 重载配置",
+
+  "blockprintlink.overlay.ip": "§7IP: §f%s",
+  "blockprintlink.overlay.port": "§7端口: §f%s",
+  "blockprintlink.overlay.token": "§7令牌: §f%s",
+  "blockprintlink.overlay.hotkey_hint": "§7[%s] 显示/隐藏",
+
+  "blockprintlink.overlay.qr_failed_header": "§c[bridge] 二维码生成失败，原始信息：",
+  "blockprintlink.overlay.qr_failed_ip": "§7IP: §f%s",
+  "blockprintlink.overlay.qr_failed_port": "§7端口: §f%s",
+  "blockprintlink.overlay.qr_failed_token": "§7令牌: §f%s",
+
+  "key.blockprintlink.toggle_bridge_qr": "显示/隐藏桥接二维码",
+  "blockprintlink.ui.title": "BlockPrint Link",
+  "blockprintlink.ui.close_hint": "ESC",
+  "blockprintlink.ui.footer": "BlockPrint 桥接",
+  "blockprintlink.ui.version": "MC %s",
+  "blockprintlink.ui.copied": "连接地址已复制到剪贴板",
+
+  "key.category.blockprintlink.blockprintlink": "BlockPrint Link",
+  "key.categories.blockprintlink": "BlockPrint Link"
+}

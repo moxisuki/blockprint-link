@@ -1,0 +1,55 @@
+plugins {
+    id 'multiloader-common'
+    // NGD provides the Minecraft classes that common's compileJava
+    // depends on (Component, GuiGraphics, Minecraft, I18n, etc.).
+    // Forge 1.20.1 uses ForgeGradle (not NGD) which doesn't conflict
+    // because they're different plugin ids and ForgeGradle is loaded
+    // via buildscript, not the plugins block.
+    id 'net.neoforged.moddev' version '2.0.49-beta'
+}
+
+neoForge {
+    neoFormVersion = neo_form_version
+    // Automatically enable AccessTransformers if the file exists
+    def at = file('src/main/resources/META-INF/accesstransformer.cfg')
+    if (at.exists()) {
+        accessTransformers.from(at.absolutePath)
+    }
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
+    }
+}
+
+repositories {
+    // litematicDecode is published to mavenLocal; consume from there.
+    mavenLocal()
+}
+
+dependencies {
+    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
+
+    // blockprint-core — local Kotlin lib for parsing .litematic and
+    // .schematic files. Exposed as `api` so the platform subprojects
+    // (fabric, neoforge) get it transitively via `compileOnly project(':common')`.
+    api "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+
+    // ZXing — for the in-game QR overlay. Same api exposure.
+    api "com.google.zxing:core:3.5.3"
+}
+
+configurations {
+    commonJava {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonResources {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+}
+
+artifacts {
+    commonJava sourceSets.main.java.sourceDirectories.singleFile
+    commonResources sourceSets.main.resources.sourceDirectories.singleFile
+}

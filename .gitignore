@@ -1,0 +1,12 @@
+build/
+.gradle/
+*.log
+*.lock
+.gradle/
+bin/
+out/
+run/
+runs/
+.idea/
+*.iml
+.DS_Store

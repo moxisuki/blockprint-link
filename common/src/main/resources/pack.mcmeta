@@ -1,0 +1,8 @@
+{
+    "pack": {
+        "description": "${mod_name} resources",
+        "pack_format": 26,
+        "forge:resource_pack_format": 26,
+        "forge:data_pack_format": 45
+    }
+}

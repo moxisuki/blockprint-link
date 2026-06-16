@@ -1,0 +1,84 @@
+plugins {
+    id 'multiloader-loader'
+    // NGD 2.0.141 is the latest 2.x as of 2026-06; 2.0.49 can't parse
+    // NeoForge 26.1.2's NeoForm metadata (preProcessJar tool null).
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+// NeoForge 26.1.2 requires Java 26.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
+
+repositories {
+    // litematicDecode is published to mavenLocal; consume from there.
+    mavenLocal()
+}
+
+dependencies {
+    // Bundle blockprint-core + ZXing into the final mod jar.
+    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    implementation "com.google.zxing:core:3.5.3"
+}
+
+// GuiGraphics was renamed/removed in MC 26.1.2 — exclude the common
+// rendering code until a 26.x-specific renderer is written.
+tasks.named('compileJava', JavaCompile).configure {
+    exclude 'io/github/moxisuki/blockprint/link/bridge/ui/QrHudRenderer.java'
+    exclude 'io/github/moxisuki/blockprint/link/bridge/ui/UiHooks.java'
+}
+
+neoForge {
+    version = neoforge_version
+    // Automatically enable neoforge AccessTransformers if the file exists
+    def at = project(':common').file('src/main/resources/META-INF/accesstransformer.cfg')
+    if (at.exists()) {
+        accessTransformers.from(at.absolutePath)
+    }
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
+    }
+    runs {
+        configureEach {
+            systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+            ideName = "NeoForge ${it.name.capitalize()} (${project.path})" // Unify the run config names with fabric
+        }
+        client {
+            client()
+        }
+        data {
+            data()
+
+            // DataGen can be run by - "./gradlew :neoforge:runData" in Terminal.
+            // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
+            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+
+        }
+        server {
+            server()
+        }
+    }
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+// Override processResources to add the NeoForge-specific `loader_version_range`
+// property. The base multiloader-common expand doesn't include it because
+// fabric doesn't have that concept.
+processResources {
+    def baseExpand = [
+        'loader_version_range': neoforge_loader_version_range
+    ]
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand baseExpand
+    }
+    inputs.properties(baseExpand)
+}

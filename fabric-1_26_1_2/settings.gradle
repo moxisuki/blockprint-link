@@ -1,0 +1,17 @@
+// Standalone settings for Fabric 26.1.2 — uses Gradle 9.5.1 + JDK 26.
+// Not part of the root multi-project build.
+pluginManagement {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.10.0'
+}
+
+rootProject.name = 'blockprintlink-fabric-26.1.2'

@@ -1,0 +1,40 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle',
+                 version: '6.+', changing: true
+    }
+}
+
+plugins {
+    id 'multiloader-loader'
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.21.1'
+    runs {
+        configureEach { workingDirectory project.file('run') }
+        client { property 'forge.enabledGameTestNamespaces', mod_id }
+        server { property 'forge.enabledGameTestNamespaces', mod_id }
+    }
+}
+
+repositories { mavenLocal() }
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    implementation "com.google.zxing:core:3.5.3"
+}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.named('build').configure { dependsOn 'reobfJar' }

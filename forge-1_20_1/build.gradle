@@ -1,0 +1,100 @@
+// 1.20.1 Forge — the last Forge version before the NeoForge split.
+//
+// We use ForgeGradle 6.x via the legacy buildscript+apply form because:
+//   1. ForgeGradle doesn't ship a Gradle plugin marker (plugin id
+//      `net.minecraftforge.gradle` resolves to a buildscript dep).
+//   2. The "changing" version `6.+` lets Forge bump ForgeGradle in
+//      patch releases without us tracking every version here.
+//
+// Java 17 is the toolchain floor for MC 1.20.1 (per the legacy Forge
+// MDK). We pin the toolchain via `java.toolchain.languageVersion` so
+// the build fails fast if you're on a too-new or too-old JDK.
+
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle',
+                 version: '6.+', changing: true
+    }
+}
+
+plugins {
+    id 'multiloader-loader'
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+
+// Java 21 toolchain (required by common module), but emit Java 17
+// bytecode so Forge 1.20.1 (Java 17 runtime) can load it.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+// Use raw compilerArgs for -source/-target so Gradle's JVM variant
+// matching (which keys off of sourceCompatibility/targetCompatibility
+// on the Java extension) sees Java 21 and accepts common module.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll(['-source', '17', '-target', '17'])
+}
+
+// Parchment: 1.20.1 has its own artifact. Parchment is loaded by
+// ForgeGradle's runs but is configured at the IDE-mapping level, not
+// here. Forge 1.20.1 uses MCP mappings by default — to switch to
+// Parchment, edit gradle.properties to add `mappings = "stable_60"`
+// (or similar) and the parchment block below.
+minecraft {
+    // Tell ForgeGradle which Forge version to target.
+    // (Other defaults left as-is from ForgeGradle.)
+    mappings channel: 'official', version: '1.20.1'
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+        }
+        client {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.logging.markers', 'REGISTRIES'
+        }
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.logging.markers', 'REGISTRIES'
+        }
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+    }
+}
+
+repositories {
+    mavenLocal()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    // Bundle blockprint-core + ZXing into the final mod jar.
+    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    implementation "com.google.zxing:core:3.5.3"
+    // forge-common (HUD rendering) would be here, but ForgeGradle's
+    // minecraft configuration doesn't expose client-only classes in
+    // multi-project builds. See docs/CROSS_VERSION_PLAN.md §HUD.
+}
+
+// Standardise compilation flags.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+// ForgeGradle's reobfJar remaps Mojang → SRG so the jar works with
+// the SRG-named runtime. Wire it into the build lifecycle.
+tasks.named('build').configure { dependsOn 'reobfJar' }
+
+// 1.20.1 has GuiGraphics (introduced MC 1.20). Common rendering
+// code compiles directly — no exclusions needed.
+
+// HUD rendering is in forge-common (separate subproject with clean
+// ForgeGradle classpath). forge-common's RenderDelegate hooks into
+// ForgeQrBridge callbacks via static init, so the QR overlay renders
+// as soon as Minecraft loads the forge-common classes.

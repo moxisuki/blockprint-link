@@ -1,0 +1,125 @@
+plugins {
+    // see https://fabricmc.net/develop/ for new versions
+    // 1.11-SNAPSHOT supports MC 1.21.5+; 1.21.1/1.21.4 also work on it.
+    // Requires Gradle 8.14+ (see gradle/wrapper/gradle-wrapper.properties).
+    id 'fabric-loom' version '1.11-SNAPSHOT' apply false
+    // NGD used to be declared here with `apply false` so subprojects could
+    // pick it up. But different NeoForge subprojects need different NGD
+    // versions (1.x for MC 1.20.x, 2.x for 1.21+) and the classpath
+    // conflict prevents per-subproject overrides. So now each neoforge-*
+    // subproject declares its own NGD version explicitly.
+}
+
+// Standardise compilation flags across all subprojects.
+allprojects {
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}
+
+// Push the freshly built NeoForge mod into the local Minecraft mods
+// folder so it can be tested without manually copying the jar.
+//
+// Where the mod goes is read in this priority order:
+//   1. `${subproject}/gradle.properties` — `blockprint.modsDir=...`
+//      (lives next to the loader source; lets each loader know its own
+//      target without polluting the global file. Machine-local; should
+//      be in your .gitignore.)
+//   2. Root or `~/.gradle/gradle.properties` — `blockprint.modsDir=...`
+//      (shared across all versions; handy for CI / one-machine setups.)
+//   3. (not set) — the task is a no-op: jar still builds, copy is skipped,
+//      and the build is reported SUCCESS. Lets you opt out of deploy
+//      without disabling the task.
+//
+// Usage:  ./gradlew :deployToMc-1_21_1         # 1.21.1
+//         ./gradlew :deployToMc-1_21_4         # 1.21.4
+def deployMcTask(String subprojectPath, String versionSuffix) {
+    def taskName = "deployToMc-${versionSuffix}"
+    return tasks.register(taskName) {
+        group = 'blockprint'
+        description = "Build ${subprojectPath} and copy it into the local Minecraft mods directory (skipped if blockprint.modsDir is unset)."
+        // forge subprojects need reobfJar (SRG remap);
+        // fabric subprojects need remapJar (intermediary remap);
+        // neoforge use plain jar
+        if (subprojectPath.startsWith(':forge') && subprojectPath.contains('1_20_1')) {
+            dependsOn "${subprojectPath}:reobfJar"
+        } else if (subprojectPath.startsWith(':forge')) {
+            dependsOn "${subprojectPath}:jar"
+        } else if (subprojectPath.startsWith(':fabric')) {
+            dependsOn "${subprojectPath}:remapJar"
+        } else {
+            dependsOn "${subprojectPath}:jar"
+        }
+
+        doLast {
+            // Resolve inside doLast, reading the subproject's
+            // gradle.properties directly from disk. Project.findProperty()
+            // walks up to the root + global config and didn't reliably
+            // surface subproject-only values in our setup, so parse the
+            // file ourselves for the per-subproject case.
+            def modsDirPath = readSubprojectModsDir(subprojectPath)
+            if (!modsDirPath) {
+                modsDirPath = providers.gradleProperty('blockprint.modsDir').getOrNull()
+            }
+            if (!modsDirPath) {
+                logger.lifecycle("[${taskName}] blockprint.modsDir not set — skipping copy. " +
+                        "Set it in ${subprojectPath}/gradle.properties or ~/.gradle/gradle.properties to enable.")
+                return
+            }
+            logger.lifecycle("[${taskName}] Using modsDir: ${modsDirPath}")
+            def modsDir = file(modsDirPath)
+            if (!modsDir.exists() && !modsDir.mkdirs()) {
+                throw new GradleException("Cannot create mods directory: ${modsDir}")
+            }
+            // Fabric: use remapJar output; forge: reobfJar modifies jar in place;
+            // neoforge: plain jar
+            def srcTaskName = subprojectPath.startsWith(':fabric') ? 'remapJar' : 'jar'
+            def jarTask = project(subprojectPath).tasks.named(srcTaskName).get()
+            def srcJar = jarTask.archiveFile.get().asFile
+            if (!srcJar.exists()) {
+                throw new GradleException("Built jar not found at ${srcJar}. Did ${subprojectPath}:jar run?")
+            }
+            // Use new File(...) explicitly: Project.file(Object, Object) is not
+            // overloaded, so a 2-arg call gets matched against the (path,
+            // PathValidation) overload and blows up.
+            def destJar = new File(modsDir, srcJar.name)
+            // Preserve an older build under a .prev suffix so we can roll back
+            // without reaching for backups.
+            if (destJar.exists()) {
+                def prev = new File(destJar.parentFile, destJar.name + '.prev')
+                if (prev.exists()) prev.delete()
+                destJar.renameTo(prev)
+            }
+            srcJar.withInputStream { ins ->
+                destJar.withOutputStream { out -> out << ins }
+            }
+            logger.lifecycle("[${taskName}] Pushed ${srcJar.name} -> ${destJar}")
+            logger.lifecycle("[${taskName}] Size: ${destJar.length()} bytes")
+        }
+    }
+}
+
+/**
+ * Read `blockprint.modsDir` from a subproject's own `gradle.properties`
+ * by parsing the file directly. Returns null if the file or key is
+ * absent.
+ */
+def readSubprojectModsDir(String subprojectPath) {
+    def sub = rootProject.findProject(subprojectPath)
+    if (sub == null) return null
+    def propsFile = new File(sub.projectDir, 'gradle.properties')
+    if (!propsFile.isFile()) return null
+    def props = new Properties()
+    propsFile.withInputStream { props.load(it) }
+    return props.getProperty('blockprint.modsDir')
+}
+
+deployMcTask(':neoforge-1_21_1', '1_21_1')
+deployMcTask(':neoforge-1_21_4', '1_21_4')
+deployMcTask(':neoforge-1_21_8', '1_21_8')
+deployMcTask(':forge-1_20_1', '1_20_1')
+deployMcTask(':neoforge-1_26_1_2', '1_26_1_2')
+deployMcTask(':fabric-1_21_1', '1_21_1_fabric')
+deployMcTask(':forge-1_21_1', '1_21_1_forge')
+deployMcTask(':fabric-1_21_4', '1_21_4_fabric')
+deployMcTask(':fabric-1_21_8', '1_21_8_fabric')
