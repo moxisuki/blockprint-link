@@ -26,10 +26,10 @@ jobs:
             task: ':neoforge-1_21_8:jar'
             jdk: 21
           - name: forge-1.20.1
-            task: ':forge-1_20_1:jar'
+            task: ':forge-1_20_1:build'
             jdk: 21
           - name: forge-1.21.1
-            task: ':forge-1_21_1:jar'
+            task: ':forge-1_21_1:build'
             jdk: 21
           - name: fabric-1.21.1
             task: ':fabric-1_21_1:remapJar'

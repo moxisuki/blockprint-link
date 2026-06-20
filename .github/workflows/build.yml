@@ -19,9 +19,9 @@ jobs:
           - name: neoforge-1.21.8
             task: ':neoforge-1_21_8:jar'
           - name: forge-1.20.1
-            task: ':forge-1_20_1:jar'
+            task: ':forge-1_20_1:build'
           - name: forge-1.21.1
-            task: ':forge-1_21_1:jar'
+            task: ':forge-1_21_1:build'
           - name: fabric-1.21.1
             task: ':fabric-1_21_1:remapJar'
           - name: fabric-1.21.4
