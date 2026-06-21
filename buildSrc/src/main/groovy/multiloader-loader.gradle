@@ -34,10 +34,6 @@ processResources {
 tasks.named('javadoc', Javadoc).configure {
     dependsOn(configurations.commonJava)
     source(configurations.commonJava)
-    // NGD's javadoc check is strict and rejects common-source Javadoc
-    // references that don't resolve on the neoforge platform. Don't
-    // fail the build on Javadoc warnings/errors — the Javadoc jar is
-    // informational only.
     options.addBooleanOption('Xwerror', false)
     options.encoding = 'UTF-8'
     failOnError = false
@@ -50,27 +46,25 @@ tasks.named('sourcesJar', Jar) {
     from(configurations.commonResources)
 }
 
-// Bundle the `implementation`/`modImplementation`/`runtimeClasspath` jar
-// deps into the final mod jar. Without this, the `mod` jar produced by
-// `jar` only contains this subproject's own classes — `modCompileOnly` /
-// `api` deps that exist on runtimeClasspath but aren't independently
-// shipped by the loader (e.g. litematicDecode, zxing-core) would be
-// missing at runtime, leading to NoClassDefFoundError on first call.
 tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from {
-        // Walk the resolved runtime classpath and pull in jars whose
-        // filename matches our known external dependencies. This is
-        // intentionally simple: we don't try to filter by group because
-        // Gradle 8.x's internal FileCollection API isn't stable for that.
+        // Exact filename matching.  Prefix/regex matching crashes Forge
+        // mod discovery when the from{} closure returns a List of 2+
+        // zipTrees (Gradle 8.14 bug).  Update filenames when bumping deps.
         def wantedNames = [
-            'blockprint-core-jvm-0.1.7.jar',
+            'blockprint-core-jvm-0.1.22.jar',
             'core-3.5.3.jar'
-            // kotlin-stdlib is provided by the Kotlin mod at runtime —
-            // don't bundle it, avoids 1.7 MB bloat.
         ] as Set
         configurations.runtimeClasspath.findAll { f ->
             wantedNames.contains(f.name)
         }.collect { zipTree(it) }
+    }
+    // 0.1.20+ core includes glb/ (3D preview) compiled with Kotlin 2.2+.
+    // We don't use GLB — exclude to reduce jar size.
+    eachFile { fcd ->
+        if (fcd.path.startsWith('io/github/moxisuki/blockprint/core/glb/')) {
+            fcd.exclude()
+        }
     }
 }

@@ -71,12 +71,13 @@ minecraft {
 
 repositories {
     mavenLocal()
+    mavenCentral()
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // Bundle blockprint-core + ZXing into the final mod jar.
-    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.22"
     implementation "com.google.zxing:core:3.5.3"
     // forge-common (HUD rendering) would be here, but ForgeGradle's
     // minecraft configuration doesn't expose client-only classes in

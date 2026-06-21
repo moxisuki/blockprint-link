@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     // Bundle blockprint-core + ZXing into the final mod jar.
-    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.22"
     implementation "com.google.zxing:core:3.5.3"
 }
 

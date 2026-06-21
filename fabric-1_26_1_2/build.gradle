@@ -23,7 +23,7 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // jar-in-jar: implementation for compile-time, include for runtime bundle
-    implementation include("io.github.moxisuki:blockprint-core-jvm:0.1.7")
+    implementation include("io.github.moxisuki:blockprint-core-jvm:0.1.22")
     implementation include("com.google.zxing:core:3.5.3")
 }
 

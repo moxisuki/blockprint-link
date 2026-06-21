@@ -45,5 +45,6 @@ include('neoforge-1_21_8')
 // classpath. Skip it.
 include('forge-1_20_1')
 include('forge-1_21_1')
-include('fabric-1_26_1_2')
+// TEMP: Loom 1.16.3 needs Gradle 9+; not available locally.
+// include('fabric-1_26_1_2')
 include('neoforge-1_26_1_2')

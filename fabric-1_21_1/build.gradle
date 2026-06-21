@@ -17,7 +17,7 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
     // Bundle blockprint-core + ZXing into the final mod jar.
-    modImplementation "io.github.moxisuki:blockprint-core-jvm:0.1.7"
+    modImplementation "io.github.moxisuki:blockprint-core-jvm:0.1.22"
     modImplementation "com.google.zxing:core:3.5.3"
 }
 

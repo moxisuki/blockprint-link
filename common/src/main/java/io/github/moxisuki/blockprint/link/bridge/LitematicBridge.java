@@ -7,9 +7,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class LitematicBridge {
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static final AtomicBoolean STOPPED = new AtomicBoolean(false);
+    private static volatile File resolvedGameDir;
     private static SchematicsWatcher watcher;
     private static SchematicsWsServer wsServer;
     private static DiscoveryBeacon beacon;
+
+    /** Exposed for debug: the game directory resolved at startup. */
+    public static File getGameDir() { return resolvedGameDir; }
 
     private LitematicBridge() {}
 
@@ -22,6 +26,7 @@ public final class LitematicBridge {
         }
 
         File gameDir = resolveGameDir();
+        resolvedGameDir = gameDir;
         if (gameDir == null) {
             LogUtil.warn("gameDir not resolvable; skipping watcher/ws/beacon");
         } else {
@@ -61,10 +66,9 @@ public final class LitematicBridge {
             return ((java.nio.file.Path) gd.getClass().getMethod("get").invoke(gd)).toFile();
         } catch (Throwable ignored) {}
         try {
-            // Forge 1.20.1 (net.minecraftforge.* — pre-split)
-            Class<?> c = Class.forName("net.minecraftforge.fml.loading.FMLPaths");
-            Object gd = c.getField("GAMEDIR").get(null);
-            return ((java.nio.file.Path) gd.getClass().getMethod("get").invoke(gd)).toFile();
+            // Forge 1.20.1+ — FMLLoader.getGamePath() is the public API.
+            Class<?> c = Class.forName("net.minecraftforge.fml.loading.FMLLoader");
+            return ((java.nio.file.Path) c.getMethod("getGamePath").invoke(null)).toFile();
         } catch (Throwable ignored) {}
         return null;
     }

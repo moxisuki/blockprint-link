@@ -3,8 +3,6 @@ package io.github.moxisuki.blockprint.link.forge;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.github.moxisuki.blockprint.link.LitematicMod;
 import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
-import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -14,14 +12,8 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
 
 /**
- * Forge 1.20.1 configuration spec. Uses {@code ForgeConfigSpec} and
- * registers via the legacy {@code ModLoadingContext}.
- *
- * <p>Note: 1.20.1 Forge does not have {@code
- * RegisterClientCommandsEvent} (added in NeoForge 1.20.2+), so the
- * {@code /blockprint-reload} command is not available on this version.
- * Config reloads are still picked up via
- * {@link ModConfigEvent.Reloading}.
+ * Forge 1.21.1 configuration spec. Registers via
+ * {@link ModLoadingContext#get()} as {@code CLIENT} type.
  */
 @Mod.EventBusSubscriber(modid = LitematicMod.MOD_ID, value = Dist.CLIENT)
 public final class BridgeConfigSpec {
@@ -45,10 +37,9 @@ public final class BridgeConfigSpec {
 
     /** Called from LitematicModForge's constructor. */
     public static void register() {
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SPEC, "blockprintlink-bridge.toml");
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC);
     }
 
-    /** Called from the /blockprint-reload command. */
     public static void syncToRuntime() {
         BridgeConfig.applyValues(TOKEN.get(), SHOW_CHAT.get(), WS_PORT.get(), DISCOVERY_PORT.get());
     }

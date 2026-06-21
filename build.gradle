@@ -41,6 +41,7 @@ def deployMcTask(String subprojectPath, String versionSuffix) {
         // forge subprojects need reobfJar (SRG remap);
         // fabric subprojects need remapJar (intermediary remap);
         // neoforge use plain jar
+        //
         if (subprojectPath.startsWith(':forge') && subprojectPath.contains('1_20_1')) {
             dependsOn "${subprojectPath}:reobfJar"
         } else if (subprojectPath.startsWith(':forge')) {
