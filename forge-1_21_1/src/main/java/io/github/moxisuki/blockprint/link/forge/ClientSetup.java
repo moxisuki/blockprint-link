@@ -33,7 +33,6 @@ final class ClientSetup {
             @SubscribeEvent
             public void onJoin(PlayerEvent.PlayerLoggedInEvent event) {
                 if (!io.github.moxisuki.blockprint.link.bridge.BridgeConfig.showChatMessages()) return;
-                // Compiled call (not reflection) — reobfJar remaps method names to SRG
                 event.getEntity().displayClientMessage(
                     net.minecraft.network.chat.Component.translatable("blockprintlink.chat.loaded",
                         "BlockPrint Link", "0.1.0"), false);
