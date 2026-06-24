@@ -47,7 +47,8 @@ public class LitematicModFabric implements ClientModInitializer {
             // Compiled call — avoids reflection issues with Fabric mappings
             if (client.player != null) {
                 client.player.displayClientMessage(
-                    Component.translatable("blockprintlink.chat.loaded", "BlockPrint Link", "0.1.0"), false);
+                    Component.translatable("blockprintlink.chat.loaded",
+                        LitematicMod.MOD_NAME, LitematicMod.MOD_VERSION), false);
                 client.player.displayClientMessage(
                     Component.translatable("blockprintlink.chat.token_info",
                         BridgeConfig.sessionToken(), BridgeConfig.hotkeyName()), false);

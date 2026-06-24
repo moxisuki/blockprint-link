@@ -9,6 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 @Mod(LitematicMod.MOD_ID)
 public class LitematicModForge {
@@ -39,6 +40,7 @@ public class LitematicModForge {
                 })
         );
         LitematicMod.init();
-        ClientSetup.register();
+        // FMLLoadCompleteEvent is on the mod bus, not MinecraftForge.EVENT_BUS.
+        ClientSetup.register(FMLJavaModLoadingContext.get().getModEventBus());
     }
 }

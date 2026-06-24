@@ -19,8 +19,8 @@ repositories {
 
 dependencies {
     // Bundle blockprint-core + ZXing into the final mod jar.
-    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.22"
-    implementation "com.google.zxing:core:3.5.3"
+    implementation "io.github.moxisuki:blockprint-core-jvm:${core_version}"
+    implementation "com.google.zxing:core:${zxing_version}"
 }
 
 // GuiGraphics was renamed/removed in MC 26.1.2 — exclude the common

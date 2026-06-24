@@ -2,6 +2,7 @@ package io.github.moxisuki.blockprint.link.forge;
 
 import io.github.moxisuki.blockprint.link.LitematicMod;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 @Mod(LitematicMod.MOD_ID)
 public class LitematicModForge {
@@ -12,6 +13,6 @@ public class LitematicModForge {
         io.github.moxisuki.blockprint.link.bridge.ClientMeta.setLoaderVersion("52.1.9");
         BridgeConfigSpec.register();
         LitematicMod.init();
-        ClientSetup.register();
+        ClientSetup.register(FMLJavaModLoadingContext.get().getModEventBus());
     }
 }

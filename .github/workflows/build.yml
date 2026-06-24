@@ -52,3 +52,63 @@ jobs:
             !**/build/libs/*-sources.jar
             !**/build/libs/*-javadoc.jar
             !**/build/libs/*-dev.jar
+
+  build-neoforge-26:
+    name: Build neoforge-26.1.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        id: jdk21
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 26
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew :neoforge-1_26_1_2:jar --no-daemon \
+            -Dorg.gradle.java.installations.paths="${{ steps.jdk21.outputs.path }},$JAVA_HOME_26_X64"
+        env:
+          JAVA_HOME: ${{ steps.jdk21.outputs.path }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neoforge-26.1.2
+          path: |
+            neoforge-1_26_1_2/build/libs/*.jar
+            !neoforge-1_26_1_2/build/libs/*-sources.jar
+            !neoforge-1_26_1_2/build/libs/*-javadoc.jar
+
+  build-fabric-26:
+    name: Build fabric-26.1.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 26
+
+      - name: Build (standalone)
+        working-directory: fabric-1_26_1_2
+        run: |
+          chmod +x gradlew
+          ./gradlew jar --no-daemon
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabric-26.1.2
+          path: |
+            fabric-1_26_1_2/build/libs/*.jar
+            !fabric-1_26_1_2/build/libs/*-sources.jar
+            !fabric-1_26_1_2/build/libs/*-javadoc.jar

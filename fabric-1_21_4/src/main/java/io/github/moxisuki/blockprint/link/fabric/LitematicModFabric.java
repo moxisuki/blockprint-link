@@ -18,7 +18,7 @@ public class LitematicModFabric implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        io.github.moxisuki.blockprint.link.bridge.ClientMeta.setMcVersion("1.21.1");
+        io.github.moxisuki.blockprint.link.bridge.ClientMeta.setMcVersion("1.21.4");
         io.github.moxisuki.blockprint.link.bridge.ClientMeta.setLoader("fabric");
         LitematicMod.init();
 
@@ -44,10 +44,10 @@ public class LitematicModFabric implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> LitematicBridge.shutdown());
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             if (!BridgeConfig.showChatMessages()) return;
-            // Compiled call — avoids reflection issues with Fabric mappings
             if (client.player != null) {
                 client.player.displayClientMessage(
-                    Component.translatable("blockprintlink.chat.loaded", "BlockPrint Link", "0.1.0"), false);
+                    Component.translatable("blockprintlink.chat.loaded",
+                        LitematicMod.MOD_NAME, LitematicMod.MOD_VERSION), false);
                 client.player.displayClientMessage(
                     Component.translatable("blockprintlink.chat.token_info",
                         BridgeConfig.sessionToken(), BridgeConfig.hotkeyName()), false);

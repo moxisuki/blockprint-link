@@ -5,6 +5,7 @@ import io.github.moxisuki.blockprint.link.LogUtil;
 import io.github.moxisuki.blockprint.link.schematic.SchematicScanner;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,6 +18,7 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,6 +29,27 @@ import java.util.regex.Pattern;
  * Lightweight RFC 6455 WebSocket server. Built on a raw {@link ServerSocket}
  * (not the JDK's {@code HttpServer}) because we need the 101 Switching
  * Protocols response with custom headers, which HttpServer can't do.
+ *
+ * <h2>Wire protocol v2 (upload)</h2>
+ *
+ * <p>The previous single-frame upload (one {@code upload} text frame + an
+ * immediate binary body) raced with the browser's WebSocket fragmentation
+ * for any file &gt; ~32 KiB. The new protocol is two-phase:
+ *
+ * <pre>{@code
+ *   C → S  [text]  {"type":"upload/init", "fileName":"foo", "size":33711,
+ *                    "sha256":"abc..."  (optional)}
+ *   S → C  [text]  {"type":"upload/ready", "fileName":"foo"}
+ *   C → S  [binary] chunk1 (any size)
+ *   C → S  [binary] chunk2
+ *   C → S  [text]  {"type":"upload/commit", "fileName":"foo"}
+ *   S → C  [text]  {"type":"upload/result", "fileName":"foo", "ok":true,
+ *                    "sha256":"<computed>"}  or  "ok":false, "error":"..."
+ * }</pre>
+ *
+ * <p>Binary frames outside the {@code init → ready} window are silently
+ * dropped (with a warn) so an over-eager client can't poison the
+ * accumulator.
  */
 public final class SchematicsWsServer {
 
@@ -82,7 +105,7 @@ public final class SchematicsWsServer {
     private void handleConnection(Socket socket) {
         try {
             socket.setSoTimeout(0);
-            InputStream in = socket.getInputStream();
+            InputStream in = new DataInputStream(socket.getInputStream());
             OutputStream out = socket.getOutputStream();
 
             String requestLine = readLine(in);
@@ -152,6 +175,26 @@ public final class SchematicsWsServer {
     private void handleFrame(ClientSession session, Frame frame) {
         if (frame.opcode == 0x8) { session.alive.set(false); return; }
         if (frame.opcode == 0x9) { session.sendPong(frame.payload); return; }
+
+        // Binary (0x2) and continuation (0x0) frames both feed the
+        // upload accumulator. Continuation is only relevant if the
+        // client fragments a binary frame, but accepting it costs us
+        // nothing and avoids UNEXPECTED_BINARY if it happens.
+        if (frame.opcode == 0x2 || frame.opcode == 0x0) {
+            if (session.uploadState == UploadState.RECEIVING) {
+                session.uploadAccumulator.write(frame.payload, 0, frame.payload.length);
+                session.uploadReceived += frame.payload.length;
+            } else {
+                // Binary frame outside the init→ready→commit window.
+                // Warn once, drop. Common cause: a previous upload never
+                // sent commit (client crashed / disconnected mid-way).
+                LogUtil.warn("[BlockPrintLink/Bridge] Orphan binary frame ("
+                    + frame.payload.length + " bytes, opcode=0x"
+                    + Integer.toHexString(frame.opcode) + ") — no active upload");
+            }
+            return;
+        }
+
         if (frame.opcode == 0x1) {
             try {
                 Map<String, String> msg = MiniJson.parseObject(new String(frame.payload, StandardCharsets.UTF_8));
@@ -160,19 +203,12 @@ public final class SchematicsWsServer {
                 switch (type) {
                     case "list" -> handleList(session, requestId);
                     case "download" -> handleDownload(session, requestId, msg);
-                    case "upload" -> handleUploadStart(session, msg);
+                    case "upload/init" -> handleUploadInit(session, msg);
+                    case "upload/commit" -> handleUploadCommit(session, msg);
                     default -> session.sendError(requestId, "UNKNOWN_TYPE", "Unknown message type: " + type);
                 }
             } catch (Exception e) {
                 session.sendError(null, "BAD_JSON", e.getMessage());
-            }
-            return;
-        }
-        if (frame.opcode == 0x2) {
-            if (session.pendingUpload != null) {
-                handleUploadBody(session, frame.payload);
-            } else {
-                session.sendError(null, "UNEXPECTED_BINARY", "Binary frame without pending upload");
             }
         }
     }
@@ -202,6 +238,11 @@ public final class SchematicsWsServer {
     }
 
     private void handleDownload(ClientSession session, String requestId, Map<String, String> msg) {
+        // Download v2: client sends download/init, we resolve, send
+        // download/ready with metadata, then send one or more binary
+        // chunks, then download/done. Symmetric with upload v2 — the
+        // ready/done text frames give the receiver explicit handoffs
+        // instead of relying on the 0x82 opcode boundary.
         String fileName = msg.get("fileName");
         String source = msg.getOrDefault("source", "schematics");
         if (fileName == null || fileName.isEmpty()) {
@@ -225,7 +266,9 @@ public final class SchematicsWsServer {
         try {
             byte[] bytes = Files.readAllBytes(target.toPath());
             String sha = sha256Hex(bytes);
-            StringBuilder h = new StringBuilder("{\"type\":\"download/start\"");
+            // download/ready announces metadata + accepts any pending
+            // download/cancel from the client.
+            StringBuilder h = new StringBuilder("{\"type\":\"download/ready\"");
             if (requestId != null) h.append(",\"requestId\":").append(MiniJson.quote(requestId));
             h.append(",\"fileName\":").append(MiniJson.quote(fileName))
              .append(",\"size\":").append(bytes.length)
@@ -233,17 +276,32 @@ public final class SchematicsWsServer {
             if (!"schematics".equals(source)) h.append(",\"source\":").append(MiniJson.quote(source));
             h.append('}');
             session.sendText(h.toString());
-            session.sendBinary(bytes);
+
+            // Send in 64 KiB chunks. Caller reassembles by accumulating
+            // binary frames until download/done's size matches.
+            final int CHUNK = 65536;
+            for (int off = 0; off < bytes.length; off += CHUNK) {
+                int len = Math.min(CHUNK, bytes.length - off);
+                session.sendBinary(len == bytes.length ? bytes : java.util.Arrays.copyOfRange(bytes, off, off + len));
+            }
+
+            // download/done: final framing + error code if anything
+            // went wrong mid-stream (sockets broken, client cancelled).
+            StringBuilder d = new StringBuilder("{\"type\":\"download/done\"");
+            if (requestId != null && !requestId.isEmpty()) {
+                d.append(",\"requestId\":").append(MiniJson.quote(requestId));
+            }
+            d.append(",\"fileName\":").append(MiniJson.quote(fileName))
+             .append(",\"ok\":true")
+             .append(",\"bytes\":").append(bytes.length)
+             .append(",\"sha256\":\"").append(sha).append("\"")
+             .append('}');
+            session.sendText(d.toString());
         } catch (IOException e) {
             session.sendError(requestId, "IO_ERROR", e.getMessage());
         }
     }
 
-    /**
-     * Resolve a blueprint file by source.
-     * "schematics" → {@code <gameDir>/schematics/<fileName>}
-     * "saves/&lt;world&gt;" → {@code <gameDir>/saves/<world>/generated/minecraft/structures/<fileName>}
-     */
     private File resolveDownloadFile(String fileName, String source) {
         File gameDir = watcher.getSchematicsDir().getParentFile();
         if (source == null || "schematics".equals(source)) {
@@ -253,51 +311,166 @@ public final class SchematicsWsServer {
             String worldName = source.substring("saves/".length());
             return new File(gameDir, "saves/" + worldName + "/generated/minecraft/structures/" + fileName);
         }
+        if (SchematicScanner.SOURCE_WORLDEDIT.equals(source)) {
+            return new File(gameDir,
+                SchematicScanner.WORLDEDIT_SCHEMATICS_SUBDIR + "/" + fileName);
+        }
         return null;
     }
 
-    private void handleUploadStart(ClientSession session, Map<String, String> msg) {
-        String fileName = msg.get("fileName");
-        long size = parseLongOrZero(msg.get("size"));
-        boolean overwrite = "true".equalsIgnoreCase(msg.get("overwrite"));
-        if (fileName == null || !isSafeFileName(fileName)) {
-            session.sendUploadResult(fileName, false, "BAD_FILENAME");
-            return;
+    /**
+     * Route an upload to the right directory based on file format.
+     * Sponge (.schem / .schematic) → {@code <gameDir>/config/worldedit/schematics/}
+     * when WorldEdit is loaded; everything else → {@code <gameDir>/schematics/}.
+     */
+    private File resolveUploadTarget(String fileName) {
+        File gameDir = watcher.getSchematicsDir().getParentFile();
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        boolean isSponge = lower.endsWith(".schem") || lower.endsWith(".schematic");
+        if (isSponge && ModDetection.isWorldEditLoaded()) {
+            File weDir = new File(gameDir, SchematicScanner.WORLDEDIT_SCHEMATICS_SUBDIR);
+            if (weDir.isDirectory() || weDir.mkdirs()) {
+                LogUtil.info("[BlockPrintLink/Bridge] Upload " + fileName + " -> WorldEdit schematics dir");
+                return new File(weDir, fileName);
+            }
+            LogUtil.warn("[BlockPrintLink/Bridge] Cannot create WorldEdit schematics dir "
+                + weDir.getAbsolutePath() + " — falling back to schematics/");
         }
-        if (size > BridgeConfig.MAX_FILE_SIZE_BYTES) {
-            session.sendUploadResult(fileName, false, "FILE_TOO_LARGE");
-            return;
-        }
-        File target = new File(watcher.getSchematicsDir(), fileName);
-        if (target.exists() && !overwrite) {
-            session.sendUploadResult(fileName, false, "FILE_EXISTS");
-            return;
-        }
-        session.pendingUpload = new PendingUpload(fileName, size, msg.get("sha256"), target);
+        LogUtil.info("[BlockPrintLink/Bridge] Upload " + fileName + " -> schematics/");
+        return new File(watcher.getSchematicsDir(), fileName);
     }
 
-    private void handleUploadBody(ClientSession session, byte[] payload) {
-        PendingUpload up = session.pendingUpload;
-        if (up == null) return;
+    // ── Upload protocol v2: init → ready → chunks → commit ─────────────
+    //
+    // Single active upload per connection. requestId is echoed in every
+    // server response so the client can demultiplex when running tasks
+    // back-to-back on the same socket — even though only one upload is
+    // in flight at a time, the requestId lets the client's completion
+    // callback resolve the right Promise/Future.
+
+    private void handleUploadInit(ClientSession session, Map<String, String> msg) {
+        String fileName = msg.get("fileName");
+        String requestId = msg.getOrDefault("requestId", "");
+        boolean overwrite = "true".equalsIgnoreCase(msg.get("overwrite"));
+        long size = parseLongOrZero(msg.get("size"));
+        String clientSha = msg.get("sha256");
+
+        if (session.uploadState == UploadState.RECEIVING) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Upload init for " + fileName
+                + " (requestId=" + requestId + ") but another upload is in progress: "
+                + session.uploadFileName);
+            session.sendUploadResult(requestId, fileName, false, "BUSY");
+            return;
+        }
+
+        if (fileName == null || !isSafeFileName(fileName)) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Upload init rejected: bad filename " + fileName);
+            session.sendUploadResult(requestId, fileName, false, "BAD_FILENAME");
+            return;
+        }
+        if (size <= 0 || size > BridgeConfig.MAX_FILE_SIZE_BYTES) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Upload init rejected: " + fileName
+                + " bad size " + size);
+            session.sendUploadResult(requestId, fileName, false, "FILE_TOO_LARGE");
+            return;
+        }
+        File target = resolveUploadTarget(fileName);
+        if (target.exists() && !overwrite) {
+            LogUtil.info("[BlockPrintLink/Bridge] Upload init rejected: " + fileName + " exists");
+            session.sendUploadResult(requestId, fileName, false, "FILE_EXISTS");
+            return;
+        }
+
+        session.uploadState = UploadState.RECEIVING;
+        session.uploadRequestId = requestId;
+        session.uploadFileName = fileName;
+        session.uploadTarget = target;
+        session.uploadExpectedSize = size;
+        session.uploadClientSha = clientSha;
+        session.uploadAccumulator = new ByteArrayOutputStream();
+        session.uploadReceived = 0;
+
+        LogUtil.info("[BlockPrintLink/Bridge] Upload init [" + requestId + "]: " + fileName
+            + " (" + size + " bytes) -> " + target.getAbsolutePath());
+        session.sendText("{\"type\":\"upload/ready\",\"requestId\":"
+            + MiniJson.quote(requestId) + ",\"fileName\":" + MiniJson.quote(fileName) + "}");
+    }
+
+    private void handleUploadCommit(ClientSession session, Map<String, String> msg) {
+        String fileName = msg.get("fileName");
+        String requestId = msg.getOrDefault("requestId", "");
+        if (session.uploadState != UploadState.RECEIVING
+            || !fileName.equals(session.uploadFileName)
+            || !requestId.equals(session.uploadRequestId)) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Upload commit for " + fileName
+                + " (requestId=" + requestId + ") doesn't match active upload ("
+                + session.uploadFileName + ", " + session.uploadRequestId + ")");
+            session.sendUploadResult(requestId, fileName, false, "NO_ACTIVE_UPLOAD");
+            resetUpload(session);
+            return;
+        }
+        if (session.uploadReceived != session.uploadExpectedSize) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Upload length mismatch [" + requestId + "]: "
+                + fileName + " expected=" + session.uploadExpectedSize + " got=" + session.uploadReceived);
+            session.sendUploadResult(requestId, fileName, false, "LENGTH_MISMATCH");
+            resetUpload(session);
+            return;
+        }
+
         try {
-            try (var fos = new java.io.FileOutputStream(up.target)) {
-                fos.write(payload);
+            byte[] full = session.uploadAccumulator.toByteArray();
+            String actualSha = sha256Hex(full);
+            LogUtil.info("[BlockPrintLink/Bridge] Upload commit [" + requestId + "]: " + fileName
+                + " expectedSize=" + session.uploadExpectedSize
+                + " actualSize=" + full.length
+                + " clientSha=" + (session.uploadClientSha != null
+                    ? session.uploadClientSha.substring(0, Math.min(8, session.uploadClientSha.length())) + "..." : "null")
+                + " serverSha=" + actualSha.substring(0, Math.min(8, actualSha.length())) + "...");
+
+            if (session.uploadClientSha != null
+                && !session.uploadClientSha.equalsIgnoreCase(actualSha)) {
+                LogUtil.warn("[BlockPrintLink/Bridge] Upload SHA mismatch [" + requestId + "]: " + fileName
+                    + " client=" + session.uploadClientSha + " server=" + actualSha);
+                session.sendUploadResult(requestId, fileName, false, "SHA_MISMATCH");
+                resetUpload(session);
+                return;
             }
-            String actualSha = sha256Hex(Files.readAllBytes(up.target.toPath()));
-            if (up.expectedSha != null && !up.expectedSha.equalsIgnoreCase(actualSha)) {
-                Files.deleteIfExists(up.target.toPath());
-                session.sendUploadResult(up.fileName, false, "SHA_MISMATCH");
-            } else {
-                session.sendUploadResult(up.fileName, true, null);
+
+            try (var fos = new java.io.FileOutputStream(session.uploadTarget)) {
+                fos.write(full);
             }
+            LogUtil.info("[BlockPrintLink/Bridge] Upload complete [" + requestId + "]: " + fileName
+                + " (" + full.length + " bytes) -> " + session.uploadTarget.getAbsolutePath());
+            session.sendUploadResult(requestId, fileName, true, null);
+            session.sendText("{\"type\":\"upload/done\",\"requestId\":"
+                + MiniJson.quote(requestId)
+                + ",\"fileName\":" + MiniJson.quote(fileName)
+                + ",\"sha256\":\"" + actualSha + "\"}");
         } catch (IOException e) {
-            session.sendUploadResult(up.fileName, false, "IO_ERROR: " + e.getMessage());
+            LogUtil.error("[BlockPrintLink/Bridge] Upload IO error [" + requestId + "]: " + fileName
+                + " -> " + session.uploadTarget.getAbsolutePath(), e);
+            session.sendUploadResult(requestId, fileName, false, "IO_ERROR: " + e.getMessage());
         } finally {
-            session.pendingUpload = null;
+            resetUpload(session);
         }
     }
+
+    private static void resetUpload(ClientSession session) {
+        session.uploadState = UploadState.IDLE;
+        session.uploadRequestId = null;
+        session.uploadFileName = null;
+        session.uploadTarget = null;
+        session.uploadExpectedSize = 0;
+        session.uploadClientSha = null;
+        session.uploadAccumulator = null;
+        session.uploadReceived = 0;
+    }
+
+    private enum UploadState { IDLE, RECEIVING }
 
     private Frame readFrame(InputStream in) throws IOException {
+        // Wrapped by DataInputStream upstream so read(byte[], int, int)
+        // implements the "read until len or EOF" contract.
         int b1 = in.read();
         int b2 = in.read();
         if (b1 < 0 || b2 < 0) return null;
@@ -305,7 +478,12 @@ public final class SchematicsWsServer {
         boolean masked = (b2 & 0x80) != 0;
         long len = b2 & 0x7F;
         if (len == 126) {
-            len = ((in.read() << 8) | in.read()) & 0xFFFFL;
+            // in.read() returns signed int for bytes ≥ 0x80. MUST mask with
+            // 0xFF before shifting — otherwise sign extension corrupts the
+            // length (0x83AF → 33495 instead of 33711).
+            int h = in.read() & 0xFF;
+            int l = in.read() & 0xFF;
+            len = ((h << 8) | l) & 0xFFFFL;
         } else if (len == 127) {
             len = 0;
             for (int i = 0; i < 8; i++) len = (len << 8) | (in.read() & 0xFF);
@@ -315,20 +493,18 @@ public final class SchematicsWsServer {
             mask = new byte[4];
             for (int i = 0; i < 4; i++) mask[i] = (byte) in.read();
         }
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        long remaining = len;
-        while (remaining > 0) {
-            int toRead = (int) Math.min(buf.length, remaining);
-            int n = in.read(buf, 0, toRead);
-            if (n < 0) throw new IOException("Unexpected EOF reading frame");
-            baos.write(buf, 0, n);
-            remaining -= n;
-        }
-        byte[] payload = baos.toByteArray();
-        if (masked) {
-            for (int i = 0; i < payload.length; i++) {
-                payload[i] = (byte) (payload[i] ^ mask[i % 4]);
+        byte[] payload = new byte[(int) len];
+        if (len > 0) {
+            int totalRead = 0;
+            while (totalRead < len) {
+                int n = in.read(payload, totalRead, (int) len - totalRead);
+                if (n < 0) throw new IOException("Unexpected EOF reading frame");
+                totalRead += n;
+            }
+            if (masked) {
+                for (int i = 0; i < payload.length; i++) {
+                    payload[i] = (byte) (payload[i] ^ mask[i % 4]);
+                }
             }
         }
         return new Frame(opcode, payload);
@@ -343,7 +519,16 @@ public final class SchematicsWsServer {
         final InputStream in;
         final OutputStream out;
         final java.util.concurrent.atomic.AtomicBoolean alive = new java.util.concurrent.atomic.AtomicBoolean(true);
-        PendingUpload pendingUpload;
+
+        // Upload v2 state — single in-flight upload per connection.
+        UploadState uploadState = UploadState.IDLE;
+        String uploadRequestId;
+        String uploadFileName;
+        File uploadTarget;
+        long uploadExpectedSize;
+        String uploadClientSha;
+        ByteArrayOutputStream uploadAccumulator;
+        long uploadReceived;
 
         ClientSession(Socket socket, InputStream in, OutputStream out) {
             this.socket = socket;
@@ -391,8 +576,11 @@ public final class SchematicsWsServer {
             sendText(sb.toString());
         }
 
-        void sendUploadResult(String fileName, boolean ok, String errorCode) {
+        void sendUploadResult(String requestId, String fileName, boolean ok, String errorCode) {
             StringBuilder r = new StringBuilder("{\"type\":\"upload/result\"");
+            if (requestId != null && !requestId.isEmpty()) {
+                r.append(",\"requestId\":").append(MiniJson.quote(requestId));
+            }
             r.append(",\"fileName\":").append(fileName == null ? "null" : MiniJson.quote(fileName));
             r.append(",\"ok\":").append(ok);
             if (errorCode != null) r.append(",\"error\":").append(MiniJson.quote(errorCode));
@@ -406,19 +594,6 @@ public final class SchematicsWsServer {
         }
     }
 
-    private static final class PendingUpload {
-        final String fileName;
-        final long expectedSize;
-        final String expectedSha;
-        final File target;
-        PendingUpload(String fileName, long expectedSize, String expectedSha, File target) {
-            this.fileName = fileName;
-            this.expectedSize = expectedSize;
-            this.expectedSha = expectedSha;
-            this.target = target;
-        }
-    }
-
     private static void writeLength(int len, OutputStream out) throws IOException {
         if (len < 126) {
             out.write(len);
@@ -427,6 +602,9 @@ public final class SchematicsWsServer {
             out.write((len >> 8) & 0xFF);
             out.write(len & 0xFF);
         } else {
+            // 8-byte extended length (big-endian). Used only for >64 KiB
+            // payloads — download chunks are 64 KiB max, so this branch
+            // shouldn't trigger in practice, but keep it correct.
             out.write(127);
             for (int i = 7; i >= 0; i--) out.write((len >> (i * 8)) & 0xFF);
         }
@@ -467,7 +645,8 @@ public final class SchematicsWsServer {
         }
         String lower = name.toLowerCase();
         return lower.endsWith(".litematic") || lower.endsWith(".schematic")
-            || lower.endsWith(".nbt") || lower.endsWith(".json");
+            || lower.endsWith(".schem") || lower.endsWith(".nbt")
+            || lower.endsWith(".json");
     }
 
     private static String sha256Hex(byte[] data) {

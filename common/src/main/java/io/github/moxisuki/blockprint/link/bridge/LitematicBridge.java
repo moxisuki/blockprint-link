@@ -15,6 +15,18 @@ public final class LitematicBridge {
     /** Exposed for debug: the game directory resolved at startup. */
     public static File getGameDir() { return resolvedGameDir; }
 
+    /**
+     * Re-probe WorldEdit presence and re-register its schematics
+     * directory if newly detected. Called from the player-join hook —
+     * by that point every mod has finished constructing, so the result
+     * is authoritative even when our @Mod constructor ran before WE.
+     * Safe to call when the watcher isn't started; no-op.
+     */
+    public static void recheckWorldEdit() {
+        SchematicsWatcher w = watcher;
+        if (w != null) w.recheckWorldEdit();
+    }
+
     private LitematicBridge() {}
 
     public static synchronized void start() {

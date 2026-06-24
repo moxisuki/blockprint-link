@@ -32,10 +32,10 @@ dependencies {
     // blockprint-core — local Kotlin lib for parsing .litematic and
     // .schematic files. Exposed as `api` so the platform subprojects
     // (fabric, neoforge) get it transitively via `compileOnly project(':common')`.
-    api "io.github.moxisuki:blockprint-core-jvm:0.1.22"
+    api "io.github.moxisuki:blockprint-core-jvm:${core_version}"
 
     // ZXing — for the in-game QR overlay. Same api exposure.
-    api "com.google.zxing:core:3.5.3"
+    api "com.google.zxing:core:${zxing_version}"
 }
 
 configurations {

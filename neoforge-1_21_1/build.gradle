@@ -15,8 +15,8 @@ dependencies {
     // subproject exposes them via `api` for compile-time visibility, but
     // Gradle's api/implementation only affects compileClasspath — runtime
     // packaging still needs an explicit runtimeOnly/implementation here.
-    implementation "io.github.moxisuki:blockprint-core-jvm:0.1.22"
-    implementation "com.google.zxing:core:3.5.3"
+    implementation "io.github.moxisuki:blockprint-core-jvm:${core_version}"
+    implementation "com.google.zxing:core:${zxing_version}"
 }
 
 neoForge {

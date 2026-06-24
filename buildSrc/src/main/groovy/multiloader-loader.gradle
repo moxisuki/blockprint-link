@@ -51,13 +51,14 @@ tasks.named('jar', Jar).configure {
     from {
         // Exact filename matching.  Prefix/regex matching crashes Forge
         // mod discovery when the from{} closure returns a List of 2+
-        // zipTrees (Gradle 8.14 bug).  Update filenames when bumping deps.
-        def wantedNames = [
-            'blockprint-core-jvm-0.1.22.jar',
-            'core-3.5.3.jar'
-        ] as Set
+        // zipTrees (Gradle 8.14 bug).  Bump core_version / zxing_version
+        // in gradle.properties — filenames follow automatically.
+        // Single-quoted string concatenation forces plain java.lang.String
+        // (Groovy GString.equals(String) is broken — always returns false).
+        def coreJar = 'blockprint-core-jvm-' + core_version + '.jar'
+        def zxingJar = 'core-' + zxing_version + '.jar'
         configurations.runtimeClasspath.findAll { f ->
-            wantedNames.contains(f.name)
+            f.name == coreJar || f.name == zxingJar
         }.collect { zipTree(it) }
     }
     // 0.1.20+ core includes glb/ (3D preview) compiled with Kotlin 2.2+.

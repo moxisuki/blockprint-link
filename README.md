@@ -36,6 +36,18 @@ discoveryPort = 18081
 
 F7 打开 QR 码弹窗，`/blockprint-reload` 重载配置。
 
+## 蓝图来源
+
+bridge 自动扫描以下目录并通过 WebSocket 暴露：
+
+| 来源 | 路径 | 启用条件 |
+|---|---|---|
+| Litematica schematics | `<gameDir>/schematics/` | 始终 |
+| 原版结构导出 | `<gameDir>/saves/*/generated/minecraft/structures/` | 始终 |
+| WorldEdit schematics | `<gameDir>/config/worldedit/schematics/` | WorldEdit 加载时（classpath 探测） |
+
+WorldEdit 集成**不**作为 Gradle 依赖 —— 仅运行时按需读取默认目录。
+
 ## 许可
 
 MIT

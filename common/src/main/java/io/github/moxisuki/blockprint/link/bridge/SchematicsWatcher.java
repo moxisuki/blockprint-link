@@ -17,7 +17,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -55,6 +54,7 @@ public final class SchematicsWatcher {
             registerWatch(schematicsDir.toPath());
             registerSavesRoots();
             registerExistingStructures();
+            registerWorldEditSchematics();
 
             watchThread = new Thread(this::watchLoop, "blockprintlink-watcher");
             watchThread.setDaemon(true);
@@ -74,6 +74,38 @@ public final class SchematicsWatcher {
         if (watchThread != null) watchThread.interrupt();
         if (watchService != null) {
             try { watchService.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Re-probe WorldEdit presence and, if newly detected, register the
+     * config/worldedit/schematics leaf dir for live watching. Called
+     * from the FMLLoadCompleteEvent handler in each loader's
+     * ClientSetup — by that point every mod has finished constructing,
+     * so the cached "not loaded" answer from the @Mod constructor
+     * (which can run before WE is constructed) gets corrected.
+     *
+     * Event-driven (one probe per load-complete), no polling. After
+     * this call, {@link ModDetection} caches the result for the rest
+     * of the session.
+     */
+    public void recheckWorldEdit() {
+        ModDetection.invalidateCache();
+        try {
+            File weDir = new File(gameDir, "config/worldedit");
+            if (!weDir.isDirectory()) return;
+            File schemDir = new File(weDir, "schematics");
+            if (schemDir.isDirectory() && ModDetection.isWorldEditLoaded()) {
+                // registerWatch is idempotent on absolute path, so this is
+                // safe to call repeatedly even if WE was already detected
+                // at startup.
+                registerWatch(schemDir.toPath());
+                LogUtil.info("[BlockPrintLink/Bridge] Watching WorldEdit schematics: "
+                    + schemDir.getAbsolutePath());
+            }
+            rescanAndNotify();
+        } catch (IOException e) {
+            LogUtil.warn("[BlockPrintLink/Bridge] recheckWorldEdit failed: " + e.getMessage());
         }
     }
 
@@ -134,6 +166,26 @@ public final class SchematicsWatcher {
                     registerWatch(sd.toPath());
                 }
             }
+        }
+    }
+
+    /**
+     * Watch WorldEdit's config/worldedit/schematics directory. We always
+     * register the parent {@code config/worldedit/} dir so chain-watch
+     * picks up a {@code /schematics/} subdir that WorldEdit creates on
+     * its first save — even if WorldEdit isn't detected at startup (it
+     * may load later in the mod cycle, after our @Mod constructor runs).
+     * The leaf {@code /schematics/} dir is only registered when it
+     * already exists, so we don't try to watch a non-existent path.
+     */
+    private void registerWorldEditSchematics() throws IOException {
+        File weDir = new File(gameDir, "config/worldedit");
+        if (!weDir.isDirectory()) return;
+        registerWatch(weDir.toPath());
+        File schemDir = new File(weDir, "schematics");
+        if (schemDir.isDirectory() && ModDetection.isWorldEditLoaded()) {
+            registerWatch(schemDir.toPath());
+            LogUtil.info("[BlockPrintLink/Bridge] Watching WorldEdit schematics: " + schemDir.getAbsolutePath());
         }
     }
 
