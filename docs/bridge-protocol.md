@@ -276,7 +276,43 @@ S → C  [text]  {"type":"list/changed", "mcVersion":"...", "loader":"...",
 - **来源标识**:被这些目录收录的文件在 `source` 字段标记为 `"worldedit"`。
 - **上传路由**:WorldEdit 加载时,`.schem` / `.schematic` 上传自动落到该目录(见 §2.3)。
 
-### 2.10 Building Gadgets 2 集成
+### 2.10 客户端实现要求
+
+- 所有 send 消息**必须**带 `requestId`(响应方 echo,客户端用来路由回调)
+- 上传流程的 4 个 ack 期待点:
+  1. `upload/init` → 等 `upload/ready`
+  2. 收到 `upload/ready` 后才能开始发 binary chunks
+  3. binary 发完发 `upload/commit`
+  4. 等 `upload/result` + 可选 `upload/done`(done 只为 log SHA / emit progress=total)
+- 下载流程的 3 个 ack 期待点:
+  1. `download` → 等 `download/ready`(带 `size` 和 `sha256`)
+  2. 累积 binary chunks(服务端 64 KiB 固定切片)
+  3. `download/done` 或累计字节数 == `download/ready.size` 任一触发即完成
+- 多下载并发靠 `requestId` 路由,客户端不做并发限流(协议允许多 in-flight download)
+- 客户端必须按 `requestId` 而不是"最近一个文件名"路由响应(防回包错位)
+- 客户端可选择提供 `sha256`(让服务端预校验),不提供也行(服务端独立算并在 done 回传)
+- 孤儿 binary 帧(无 in-flight upload / 无 RECEIVING download)→ 静默丢弃 + warn log
+
+### 2.11 错误码对账表
+
+| 错误码 | 触发场景 | 客户端处理 |
+|---|---|---|
+| `AUTH_FAILED` | Token 错误(HTTP 401) | 弹"Token 错误"提示;disconnect |
+| `BAD_JSON` | 收到 JSON 解析失败 | warn log,忽略 |
+| `BAD_REQUEST` | 缺少必填字段 | warn log,忽略 |
+| `BAD_FILENAME` | 文件名非法(后缀不在白名单 / 含 `..` / `\\` 等) | UI 失败,显示 `BAD_FILENAME` |
+| `FILE_NOT_FOUND` | 下载的文件不存在 | UI 失败,显示 `FILE_NOT_FOUND` |
+| `FILE_TOO_LARGE` | 超过 100 MB | UI 失败,提示用户 |
+| `FILE_EXISTS` | 上传时文件已存在且 `overwrite:false` | UI 失败,提示用户(可重试 `overwrite=true`) |
+| `BUSY` | 服务端单连接已有 in-flight upload | UI 失败;本地已做单任务排他,基本遇不到 |
+| `NO_ACTIVE_UPLOAD` | commit 时 init 未发生 / requestId 不匹配 | warn log,reset state |
+| `LENGTH_MISMATCH` | 二进制字节数 ≠ init 时的 `size` | UI 失败,reset state |
+| `SHA_MISMATCH` | 客户端 init 时提供的 SHA 与服务端不一致 | UI 失败,reset state;可让用户重试不带 SHA |
+| `IO_ERROR` | 磁盘读写失败 | UI 失败,显示 IO 错误 |
+| `UNKNOWN_TYPE` | 未知消息类型 | warn log |
+| `BUSY_LOCAL` (客户端本地) | UI 已有 in-flight transfer | UI 按钮 disabled;不发请求;TransferProgressBar 已可见,用户能感知 |
+
+### 2.12 Building Gadgets 2 集成
 
 当 [Building Gadgets 2](https://github.com/Direwolf20-MC/BuildingGadgets2) 加载时,bridge 在每次成功上传后向当前在线玩家推送一条聊天提示:
 
