@@ -1,9 +1,16 @@
 package io.github.moxisuki.blockprint.link.forge;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import io.github.moxisuki.blockprint.link.LitematicMod;
+import io.github.moxisuki.blockprint.link.bridge.Bg2ClipboardCache;
 import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
+import net.minecraft.client.Minecraft;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -53,6 +60,47 @@ public final class BridgeConfigSpec {
     @SubscribeEvent
     static void onReload(ModConfigEvent.Reloading event) {
         if (event.getConfig().getSpec() == SPEC) syncToRuntime();
+    }
+
+    @SubscribeEvent
+    static void onRegisterCommands(RegisterClientCommandsEvent event) {
+        event.getDispatcher().register(
+            LiteralArgumentBuilder.<CommandSourceStack>literal("blockprint-reload")
+                .executes(ctx -> {
+                    syncToRuntime();
+                    ctx.getSource().sendSuccess(
+                        () -> Component.literal("§aLitematic Bridge config reloaded."), false);
+                    return 1;
+                })
+        );
+        event.getDispatcher().register(
+            LiteralArgumentBuilder.<CommandSourceStack>literal("blockprintlink")
+                .then(LiteralArgumentBuilder.<CommandSourceStack>literal("copy-bg2")
+                    .then(RequiredArgumentBuilder.<CommandSourceStack, String>argument("id", StringArgumentType.string())
+                        .executes(ctx -> {
+                            String id = ctx.getArgument("id", String.class);
+                            byte[] bytes = Bg2ClipboardCache.take(id);
+                            if (bytes == null) {
+                                ctx.getSource().sendSuccess(
+                                    () -> Component.literal("§c[BlockPrint] §fCache miss for id " + id
+                                        + " (already copied, expired, or unknown)"), false);
+                                return 0;
+                            }
+                            try {
+                                Minecraft mc = Minecraft.getInstance();
+                                mc.keyboardHandler.setClipboard(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+                                final int size = bytes.length;
+                                ctx.getSource().sendSuccess(
+                                    () -> Component.translatable("blockprintlink.chat.bg2_copied", size), false);
+                            } catch (Throwable t) {
+                                ctx.getSource().sendSuccess(
+                                    () -> Component.literal("§c[BlockPrint] §fClipboard failed: " + t), false);
+                            }
+                            return 1;
+                        })
+                    )
+                )
+        );
     }
 
     private BridgeConfigSpec() {}

@@ -4,13 +4,16 @@ import com.mojang.blaze3d.platform.InputConstants;
 import io.github.moxisuki.blockprint.link.LitematicMod;
 import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
 import io.github.moxisuki.blockprint.link.bridge.LitematicBridge;
+import io.github.moxisuki.blockprint.link.bridge.PlatformHooks;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -23,6 +26,19 @@ public class LitematicModFabric implements ClientModInitializer {
         io.github.moxisuki.blockprint.link.bridge.ClientMeta.setLoader("fabric");
         io.github.moxisuki.blockprint.link.bridge.ClientMeta.setLoaderVersion("0.19.3");
         LitematicMod.init();
+
+        PlatformHooks.setImpl(new PlatformHooks.Impl() {
+            @Override public void toggleQr() {}
+            @Override public void registerReloadCommand(Runnable r) {}
+            @Override public void sendChatToPlayer(Component text) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    mc.execute(() -> mc.player.sendSystemMessage(text));
+                }
+            }
+            @Override public ClickEvent makeClickEvent(String command) { return null; }
+            @Override public HoverEvent makeHoverEvent(Component text) { return null; }
+        });
 
         // Fabric 26.x: KeyMapping.Category API, vanilla KeyMapping registration
         var category = KeyMapping.Category.register(

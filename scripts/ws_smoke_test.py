@@ -74,10 +74,18 @@ async def run_list(ws):
     return entries
 
 
-async def run_download(ws, file_name):
-    print(f"\n=== download {file_name}")
-    await ws.send(json.dumps({"type": "download", "requestId": "r2", "fileName": file_name}))
-    ready = await recv_text(ws, expected_type="download/ready", expected_request_id="r2")
+async def run_download(ws, file_name, source=None):
+    print(f"\n=== download {file_name}" + (f"  source={source}" if source else ""))
+    payload = {"type": "download", "requestId": "r2", "fileName": file_name}
+    if source:
+        payload["source"] = source
+    await ws.send(json.dumps(payload))
+
+    resp = await recv_text(ws, expected_request_id="r2", timeout=15)
+    if resp.get("type") == "error":
+        print(f"  ✗ server error: {resp.get('code')} — {resp.get('message')}")
+        return
+    ready = resp
     size = ready["size"]
     server_sha = ready["sha256"]
     print(f"  ready: {size} bytes, sha256={server_sha[:16]}...")
@@ -147,7 +155,7 @@ async def main(args):
     async with websockets.connect(url, max_size=args.max_size_mb * 1024 * 1024) as ws:
         await run_list(ws)
         if args.download:
-            await run_download(ws, args.download)
+            await run_download(ws, args.download, source=args.source)
         if args.upload:
             await run_upload(ws, args.upload)
 
@@ -161,6 +169,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--host", default="127.0.0.1", help="bridge host (default 127.0.0.1)")
     p.add_argument("--port", type=int, default=18080, help="bridge WS port (default 18080)")
     p.add_argument("--download", metavar="FILENAME", help="download this file from bridge")
+    p.add_argument("--source", default=None,
+                   help="source for download: schematics | saves/<world> | worldedit (default schematics)")
     p.add_argument("--upload", metavar="LOCALPATH", help="upload this local file to bridge")
     p.add_argument("--max-size-mb", type=int, default=200,
                    help="WS frame size limit in MiB (default 200)")

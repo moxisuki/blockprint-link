@@ -1,7 +1,12 @@
 {
   "blockprintlink.chat.loaded": "§a[%s] §fLoaded §7v%s",
   "blockprintlink.chat.token_info": "§eToken: §f%s §7| %s to Show/Hide QR §7| /blockprint-reload = refresh",
-  "blockprintlink.chat.bg2_uploaded": "§a[BlockPrint] §fBG2 template received: §e%s §7→ §f%s",
+  "blockprintlink.chat.bp_litematica_received": "§a[BlockPrint] §fLitematica blueprint received: §e%s",
+  "blockprintlink.chat.bp_sponge_received": "§a[BlockPrint] §fWorldEdit schematic received: §e%s",
+  "blockprintlink.chat.bp_structure_received": "§a[BlockPrint] §fNBT BluePrint received: §e%s",
+  "blockprintlink.chat.bp_json_received": "§a[BlockPrint] §fBG2 template received: §e%s",
+  "blockprintlink.chat.copy_tooltip": "§7Click to copy JSON to clipboard",
+  "blockprintlink.chat.bg2_copied": "§a[BlockPrint] §fBG2 JSON copied to clipboard §7(§e%d bytes§7)",
 
   "blockprintlink.overlay.ip": "§7IP: §f%s",
   "blockprintlink.overlay.port": "§7Port: §f%s",

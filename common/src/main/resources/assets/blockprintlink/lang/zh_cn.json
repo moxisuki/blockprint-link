@@ -1,7 +1,12 @@
 {
   "blockprintlink.chat.loaded": "§a[%s] §f已加载 §7v%s",
   "blockprintlink.chat.token_info": "§e连接令牌: §f%s §7| 按 %s 显示/隐藏二维码 §7| /blockprint-reload 重载配置",
-  "blockprintlink.chat.bg2_uploaded": "§a[BlockPrint] §f收到建筑小帮手模板: §e%s §7→ §f%s",
+  "blockprintlink.chat.bp_litematica_received": "§a[BlockPrint] §fLitematica 蓝图已接收: §e%s",
+  "blockprintlink.chat.bp_sponge_received": "§a[BlockPrint] §fWorldEdit 蓝图已接收: §e%s",
+  "blockprintlink.chat.bp_structure_received": "§a[BlockPrint] §fNBT蓝图已接收: §e%s",
+  "blockprintlink.chat.bp_json_received": "§a[BlockPrint] §f建筑小帮手蓝图已接收: §e%s",
+  "blockprintlink.chat.copy_tooltip": "§7点击复制 JSON 到剪贴板",
+  "blockprintlink.chat.bg2_copied": "§a[BlockPrint] §fBG2 JSON 已复制到剪贴板 §7(§e%d 字节§7)",
 
   "blockprintlink.overlay.ip": "§7IP: §f%s",
   "blockprintlink.overlay.port": "§7端口: §f%s",

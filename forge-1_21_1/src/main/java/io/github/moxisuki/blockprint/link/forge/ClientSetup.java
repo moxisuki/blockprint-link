@@ -1,8 +1,15 @@
 package io.github.moxisuki.blockprint.link.forge;
 
+import io.github.moxisuki.blockprint.link.LogUtil;
 import io.github.moxisuki.blockprint.link.LitematicMod;
+import io.github.moxisuki.blockprint.link.bridge.Bg2ClipboardCache;
+import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
 import io.github.moxisuki.blockprint.link.bridge.LitematicBridge;
+import io.github.moxisuki.blockprint.link.bridge.PlatformHooks;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
@@ -19,6 +26,23 @@ final class ClientSetup {
     static void register(IEventBus modBus) {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
 
+        PlatformHooks.setImpl(new PlatformHooks.Impl() {
+            @Override public void toggleQr() {}
+            @Override public void registerReloadCommand(Runnable r) {}
+            @Override public void sendChatToPlayer(Component text) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    mc.execute(() -> mc.player.displayClientMessage(text, false));
+                }
+            }
+            @Override public ClickEvent makeClickEvent(String command) {
+                return new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/" + command);
+            }
+            @Override public HoverEvent makeHoverEvent(Component text) {
+                return new HoverEvent(HoverEvent.Action.SHOW_TEXT, text);
+            }
+        });
+
         // Game events → MinecraftForge.EVENT_BUS
         MinecraftForge.EVENT_BUS.register(new Object() {
             @SubscribeEvent
@@ -32,22 +56,37 @@ final class ClientSetup {
                     else if (mc.screen == null && mc.player != null)
                         mc.setScreen(new QrScreen());
                 }
+                // BG2 clipboard bridge
+                String pendingId = Bg2ClipboardCache.consumePendingCopyId();
+                if (pendingId != null) {
+                    byte[] bytes = Bg2ClipboardCache.take(pendingId);
+                    if (bytes != null) {
+                        try {
+                            Minecraft mc = Minecraft.getInstance();
+                            mc.keyboardHandler.setClipboard(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+                            if (mc.player != null) {
+                                mc.player.displayClientMessage(
+                                    Component.translatable("blockprintlink.chat.bg2_copied", bytes.length), false);
+                            }
+                        } catch (Throwable t) {
+                            LogUtil.warn("[BlockPrintLink/Bridge] Clipboard copy failed: " + t);
+                        }
+                    }
+                }
             }
 
             @SubscribeEvent
             public void onJoin(PlayerEvent.PlayerLoggedInEvent event) {
-                if (!io.github.moxisuki.blockprint.link.bridge.BridgeConfig.showChatMessages()) return;
+                if (!BridgeConfig.showChatMessages()) return;
                 event.getEntity().displayClientMessage(
-                    net.minecraft.network.chat.Component.translatable("blockprintlink.chat.loaded",
+                    Component.translatable("blockprintlink.chat.loaded",
                         LitematicMod.MOD_NAME, LitematicMod.MOD_VERSION), false);
                 event.getEntity().displayClientMessage(
-                    net.minecraft.network.chat.Component.translatable("blockprintlink.chat.token_info",
-                        io.github.moxisuki.blockprint.link.bridge.BridgeConfig.sessionToken(),
-                        io.github.moxisuki.blockprint.link.bridge.BridgeConfig.hotkeyName()), false);
+                    Component.translatable("blockprintlink.chat.token_info",
+                        BridgeConfig.sessionToken(), BridgeConfig.hotkeyName()), false);
             }
         });
 
-        // Mod lifecycle events → mod bus.
         modBus.register(new Object() {
             @SubscribeEvent
             public void onLoadComplete(FMLLoadCompleteEvent event) {

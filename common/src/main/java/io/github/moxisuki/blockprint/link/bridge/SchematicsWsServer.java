@@ -5,6 +5,10 @@ import io.github.moxisuki.blockprint.link.LogUtil;
 
 import io.github.moxisuki.blockprint.link.schematic.SchematicScanner;
 
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -24,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -278,9 +283,12 @@ public final class SchematicsWsServer {
             h.append('}');
             session.sendText(h.toString());
 
-            // Send in 64 KiB chunks. Caller reassembles by accumulating
-            // binary frames until download/done's size matches.
-            final int CHUNK = 65536;
+            // Send in ≤ 65535-byte chunks. Staying at or below 0xFFFF
+            // keeps each binary frame in the 16-bit extended-length
+            // encoding range — 65536 (0x10000) would trigger the
+            // 8-byte extended path, which has a known off-by issue
+            // in the Python websockets client's frame parser.
+            final int CHUNK = 65535;
             for (int off = 0; off < bytes.length; off += CHUNK) {
                 int len = Math.min(CHUNK, bytes.length - off);
                 session.sendBinary(len == bytes.length ? bytes : java.util.Arrays.copyOfRange(bytes, off, off + len));
@@ -448,17 +456,22 @@ public final class SchematicsWsServer {
                 + ",\"fileName\":" + MiniJson.quote(fileName)
                 + ",\"sha256\":\"" + actualSha + "\"}");
 
-            // If Building Gadgets 2 is loaded, push an in-game chat hint
-            // so the player knows the bridge just received a blueprint
-            // and where it landed. Best-effort — never fail the upload
-            // because the chat broadcast failed.
-            if (ModDetection.isBuildingGadgets2Loaded()) {
+            // Push a generic in-game chat notification so the player knows the
+            // bridge just received a blueprint. The notification fires
+            // for ANY uploaded format (.litematic / .schem / .nbt / .json
+            // / etc.) whenever the user has chat messages enabled
+            // (BridgeConfig.showChatMessages). The clickable "点此复制"
+// suffix is ONLY added when BG2 is also loaded AND the file looks
+// like a BG2 template (.json fitting the click cache) — that's a
+// sub-condition, not the master switch.
+// Best-effort — never fail the upload because chat failed.
+            if (BridgeConfig.showChatMessages()) {
                 try {
-                    LitematicMod.broadcastToCurrentPlayer(
-                        "blockprintlink.chat.bg2_uploaded",
-                        fileName,
-                        session.uploadTarget.getAbsolutePath());
-                } catch (Throwable ignored) {}
+                    LitematicMod.broadcastComponentToCurrentPlayer(
+                        buildUploadChatMessage(fileName, full));
+                } catch (Throwable t) {
+                    LogUtil.warn("[BlockPrintLink/Bridge] upload chat broadcast failed: " + t);
+                }
             }
         } catch (IOException e) {
             LogUtil.error("[BlockPrintLink/Bridge] Upload IO error [" + requestId + "]: " + fileName
@@ -478,6 +491,132 @@ public final class SchematicsWsServer {
         session.uploadClientSha = null;
         session.uploadAccumulator = null;
         session.uploadReceived = 0;
+    }
+
+    /**
+     * Build the upload chat notification. For ANY uploaded file the
+     * message reads "Blueprint received: &lt;fileName&gt;" (so the player
+     * knows the bridge landed the upload). When the file is a BG2
+     * template (.json) small enough to fit in the click-cache, a
+     * clickable green "点此复制" / "Click to copy" suffix is appended,
+     * wired to {@code /blockprintlink copy-bg2 <id>} so the player can
+     * one-click copy the full content to the clipboard.
+     *
+     * <p>Click payload is small (UUID only); bytes ride in
+     * {@link Bg2ClipboardCache} on the client side.
+     */
+    private static Component buildUploadChatMessage(String fileName, byte[] full) {
+        String langKey = langKeyForFile(fileName);
+        // Component.translatable() returns MutableComponent, so .append()
+        // chains work — just don't downgrade the type to Component.
+        var msg = Component.translatable(langKey, fileName);
+        if (!isClickableJson(fileName, full)) {
+            return msg;
+        }
+        String id = UUID.randomUUID().toString();
+        Bg2ClipboardCache.put(id, full);
+        var clickPart = Component.literal("§a§n[" + copyLabel() + "]")
+            .withStyle(style -> {
+                // Prefer typed PlatformHooks (ForgeGradle remaps the field refs,
+                // no reflection needed). Fall back to reflection-based builders
+                // for loaders that haven't set PlatformHooks yet.
+                ClickEvent ce = PlatformHooks.hasImpl()
+                    ? PlatformHooks.makeClickEvent("blockprintlink copy-bg2 " + id)
+                    : makeClickEvent("blockprintlink copy-bg2 " + id);
+                if (ce != null) style = style.withClickEvent(ce);
+                HoverEvent he = PlatformHooks.hasImpl()
+                    ? PlatformHooks.makeHoverEvent(Component.translatable("blockprintlink.chat.copy_tooltip"))
+                    : makeHoverEvent(Component.translatable("blockprintlink.chat.copy_tooltip"));
+                if (he != null) style = style.withHoverEvent(he);
+                return style;
+            });
+        // → "[BlockPrint] 建筑小帮手蓝图已接收: d0194...json — [点此复制]"
+        return msg
+            .append(Component.literal(" §7— "))
+            .append(clickPart);
+    }
+
+    /** Pick the per-format lang key based on file extension. */
+    private static String langKeyForFile(String fileName) {
+        if (fileName == null) return "blockprintlink.chat.bp_json_received";
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".litematic")) return "blockprintlink.chat.bp_litematica_received";
+        if (lower.endsWith(".schem") || lower.endsWith(".schematic")) return "blockprintlink.chat.bp_sponge_received";
+        if (lower.endsWith(".nbt")) return "blockprintlink.chat.bp_structure_received";
+        if (lower.endsWith(".json")) return "blockprintlink.chat.bp_json_received";
+        return "blockprintlink.chat.bp_json_received";
+    }
+
+    /** Whether a .json upload qualifies for the click-to-copy suffix. */
+    private static boolean isClickableJson(String fileName, byte[] full) {
+        if (fileName == null || full == null) return false;
+        if (full.length == 0 || full.length > Bg2ClipboardCache.MAX_BYTES_PER_ENTRY) return false;
+        if (!ModDetection.isBuildingGadgets2Loaded()) return false;
+        return fileName.toLowerCase(Locale.ROOT).endsWith(".json");
+    }
+
+    // ── Cross-version ClickEvent / HoverEvent builders ──────────────────
+    //
+    // MC 1.21.5+ made these classes abstract with static factory methods
+    // (ClickEvent.runCommand(…) / HoverEvent.showText(…)).
+    // 1.21.1-1.21.4 use the old new ClickEvent(Action, String) /
+    // new HoverEvent(Action, Component) constructors.
+    // Reflection bridges both so common compiles against any version.
+
+    private static ClickEvent makeClickEvent(String command) {
+        try {
+            // 1.21.5+: ClickEvent.runCommand(String)
+            java.lang.reflect.Method m = ClickEvent.class.getMethod("runCommand", String.class);
+            return (ClickEvent) m.invoke(null, command);
+        } catch (NoSuchMethodException e1) {
+            try {
+                // 1.21.1-1.21.4: ClickEvent(Action, String)
+                // Note: Action is an enum on 1.21.x but a class with static fields
+                // on 1.20.1. getField works for both.
+                Class<?> actionClass = Class.forName("net.minecraft.network.chat.ClickEvent$Action");
+                Object action = actionClass.getField("RUN_COMMAND").get(null);
+                return ClickEvent.class.getConstructor(actionClass, String.class)
+                    .newInstance(action, command);
+            } catch (Exception e2) {
+                LogUtil.warn("[BlockPrintLink/Bridge] Cannot create ClickEvent: " + e2);
+                return null;
+            }
+        } catch (Exception e) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Cannot create ClickEvent: " + e);
+            return null;
+        }
+    }
+
+    private static HoverEvent makeHoverEvent(Component text) {
+        try {
+            // 1.21.5+: HoverEvent.showText(Component)
+            java.lang.reflect.Method m = HoverEvent.class.getMethod("showText", Component.class);
+            return (HoverEvent) m.invoke(null, text);
+        } catch (NoSuchMethodException e1) {
+            try {
+                // 1.21.1-1.21.4: HoverEvent(Action, Component)
+                // Action is an enum on 1.21.x, class with static fields on 1.20.1.
+                Class<?> actionClass = Class.forName("net.minecraft.network.chat.HoverEvent$Action");
+                Object action = actionClass.getField("SHOW_TEXT").get(null);
+                return HoverEvent.class.getConstructor(actionClass, Component.class)
+                    .newInstance(action, text);
+            } catch (Exception e2) {
+                LogUtil.warn("[BlockPrintLink/Bridge] Cannot create HoverEvent: " + e2);
+                return null;
+            }
+        } catch (Exception e) {
+            LogUtil.warn("[BlockPrintLink/Bridge] Cannot create HoverEvent: " + e);
+            return null;
+        }
+    }
+
+    /** Locale-aware clickable label; mirrors the existing lang files. */
+    private static String copyLabel() {
+        // Avoid importing net.minecraft.client.Minecraft — it's not on
+        // the classpath for standalone Fabric builds. Java system locale
+        // is a reasonable proxy on single-player machines.
+        if (java.util.Locale.getDefault().getLanguage().startsWith("zh")) return "点此复制";
+        return "Click to copy";
     }
 
     private enum UploadState { IDLE, RECEIVING }

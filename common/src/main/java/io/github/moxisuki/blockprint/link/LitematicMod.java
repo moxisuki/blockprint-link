@@ -2,6 +2,7 @@ package io.github.moxisuki.blockprint.link;
 
 import io.github.moxisuki.blockprint.link.bridge.BridgeConfig;
 import io.github.moxisuki.blockprint.link.bridge.LitematicBridge;
+import io.github.moxisuki.blockprint.link.bridge.PlatformHooks;
 import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
@@ -62,28 +63,32 @@ public class LitematicMod {
      *
      * <p>Bridge threads (WebSocket acceptor, file watcher) post the
      * actual send onto the client thread via {@code Minecraft.execute(...)}
-     * so chat delivery happens on the right thread. Reflection is used
-     * because {@code common} can't import client-only {@code Minecraft}.
+     * so chat delivery happens on the right thread. Same approach as
+     * {@code QrScreen.mouseClicked} but generalised for any caller.
      */
     public static void broadcastToCurrentPlayer(String translatableKey, Object... args) {
+        broadcastComponentToCurrentPlayer(Component.translatable(translatableKey, args));
+    }
+
+    /**
+     * Send a pre-built (possibly interactive) {@link Component} to the
+     * current client player. Used when the caller needs click / hover
+     * events attached (e.g. BG2 chat click-to-copy uses
+     * {@code RUN_COMMAND} + {@code SHOW_TEXT} hover). Dispatches onto
+     * the client thread via {@code Minecraft.execute(...)}; no-op if no
+     * client / no player.
+     */
+    public static void broadcastComponentToCurrentPlayer(Component text) {
+        // Delegate to PlatformHooks — each loader provides a typed impl
+        // that handles thread dispatch and null-player checks internally.
+        if (!PlatformHooks.hasImpl()) {
+            LogUtil.warn("[BlockPrintLink/Bridge] broadcastComponentToCurrentPlayer: no PlatformHooks set — skipping");
+            return;
+        }
         try {
-            Class<?> mcCls = Class.forName("net.minecraft.client.Minecraft");
-            Object mcInst;
-            try {
-                mcInst = mcCls.getMethod("getInstance").invoke(null);
-            } catch (Throwable ignored) {
-                return; // dedicated server / no client → no-op
-            }
-            Object player = mcCls.getMethod("player").invoke(mcInst);
-            if (player == null) return;
-
-            Component text = Component.translatable(translatableKey, args);
-
-            // Post onto the client thread — sendSystemMessage must run there.
-            java.lang.reflect.Method execute = mcCls.getMethod("execute", Runnable.class);
-            execute.invoke(mcInst, (Runnable) () -> sendMessage(player, text));
-        } catch (Throwable ignored) {
-            // best-effort; never break the bridge because chat failed
+            PlatformHooks.sendChatToPlayer(text);
+        } catch (Throwable t) {
+            LogUtil.warn("[BlockPrintLink/Bridge] broadcastComponentToCurrentPlayer failed: " + t);
         }
     }
 
@@ -111,19 +116,26 @@ public class LitematicMod {
         try {
             player.getClass().getMethod("sendSystemMessage", Component.class, boolean.class)
                 .invoke(player, text, false);
+            return;
         } catch (Throwable t1) {
             try {
                 player.getClass().getMethod("sendSystemMessage", Component.class)
                     .invoke(player, text);
+                return;
             } catch (Throwable t2) {
                 try {
                     player.getClass().getMethod("displayClientMessage", Component.class, boolean.class)
                         .invoke(player, text, false);
+                    return;
                 } catch (Throwable t3) {
                     try {
                         player.getClass().getMethod("displayClientMessage", Component.class)
                             .invoke(player, text);
-                    } catch (Throwable t4) { /* silent */ }
+                        return;
+                    } catch (Throwable t4) {
+                        LogUtil.warn("[BlockPrintLink/Bridge] sendMessage: all reflection paths failed for "
+                            + player.getClass().getName());
+                    }
                 }
             }
         }
