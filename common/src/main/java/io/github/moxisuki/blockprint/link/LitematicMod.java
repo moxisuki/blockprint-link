@@ -51,6 +51,42 @@ public class LitematicMod {
             BridgeConfig.hotkeyName()));
     }
 
+    /**
+     * Send a translatable chat message to whichever player is currently
+     * on the client. Used by the bridge to push unsolicited in-game
+     * notifications (e.g. "BG2 template uploaded") without needing
+     * access to a specific Player reference at call time.
+     *
+     * <p>If no player is online (bridge running on a dedicated server,
+     * or this fires before join), the call is silently dropped.
+     *
+     * <p>Bridge threads (WebSocket acceptor, file watcher) post the
+     * actual send onto the client thread via {@code Minecraft.execute(...)}
+     * so chat delivery happens on the right thread. Reflection is used
+     * because {@code common} can't import client-only {@code Minecraft}.
+     */
+    public static void broadcastToCurrentPlayer(String translatableKey, Object... args) {
+        try {
+            Class<?> mcCls = Class.forName("net.minecraft.client.Minecraft");
+            Object mcInst;
+            try {
+                mcInst = mcCls.getMethod("getInstance").invoke(null);
+            } catch (Throwable ignored) {
+                return; // dedicated server / no client → no-op
+            }
+            Object player = mcCls.getMethod("player").invoke(mcInst);
+            if (player == null) return;
+
+            Component text = Component.translatable(translatableKey, args);
+
+            // Post onto the client thread — sendSystemMessage must run there.
+            java.lang.reflect.Method execute = mcCls.getMethod("execute", Runnable.class);
+            execute.invoke(mcInst, (Runnable) () -> sendMessage(player, text));
+        } catch (Throwable ignored) {
+            // best-effort; never break the bridge because chat failed
+        }
+    }
+
     private static String loadVersion() {
         // Class init runs once on first reference; cheap one-shot read.
         try (InputStream in = LitematicMod.class.getResourceAsStream("/version.properties")) {

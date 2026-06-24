@@ -276,6 +276,19 @@ S → C  [text]  {"type":"list/changed", "mcVersion":"...", "loader":"...",
 - **来源标识**:被这些目录收录的文件在 `source` 字段标记为 `"worldedit"`。
 - **上传路由**:WorldEdit 加载时,`.schem` / `.schematic` 上传自动落到该目录(见 §2.3)。
 
+### 2.10 Building Gadgets 2 集成
+
+当 [Building Gadgets 2](https://github.com/Direwolf20-MC/BuildingGadgets2) 加载时,bridge 在每次成功上传后向当前在线玩家推送一条聊天提示:
+
+```
+§a[BlockPrint] §f收到建筑小帮手模板: §e<fileName> §7→ §f<absolutePath>
+```
+
+- **检测方式**:运行时 classpath 探测 `com.direwolf20.buildinggadgets2.BuildingGadgets2`,不读取版本号;FMLLoadCompleteEvent 时再次确认。
+- **不引入依赖**:BG2 **不**作为 build.gradle 依赖。
+- **不强制路由**:与 WorldEdit 不同,BG2 上传**不**改变落盘目录 —— 仍按现有 §2.3 表路由(`.nbt` / `.json` → `schematics/`)。仅在聊天里通知玩家。
+- **为什么这样设计**:BG2 自己的 Template Manager 从 `schematics/` 之外的固定位置读模板;在未与 BG2 作者协商前,不擅自动其目录。后续如需自动 routing,扩展 `ModDetection` + `resolveUploadTarget` 即可。
+
 ## 3. UDP 广播发现
 
 Mod **每 2 秒**向 `255.255.255.255:18081` 广播 JSON。

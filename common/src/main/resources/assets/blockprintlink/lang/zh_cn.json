@@ -1,6 +1,7 @@
 {
   "blockprintlink.chat.loaded": "§a[%s] §f已加载 §7v%s",
   "blockprintlink.chat.token_info": "§e连接令牌: §f%s §7| 按 %s 显示/隐藏二维码 §7| /blockprint-reload 重载配置",
+  "blockprintlink.chat.bg2_uploaded": "§a[BlockPrint] §f收到建筑小帮手模板: §e%s §7→ §f%s",
 
   "blockprintlink.overlay.ip": "§7IP: §f%s",
   "blockprintlink.overlay.port": "§7端口: §f%s",

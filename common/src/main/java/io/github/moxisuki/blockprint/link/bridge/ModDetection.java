@@ -29,10 +29,16 @@ public final class ModDetection {
 
     /** WorldEdit mod id — same string across Forge / NeoForge / Fabric. */
     private static final String WORLDEDIT_MOD_ID = "worldedit";
+    /** Building Gadgets 2 mod id — same string across Forge / NeoForge / Fabric. */
+    private static final String BG2_MOD_ID = "buildinggadgets2";
+    /** Main class to fall back to if the mod-list API isn't reachable. */
+    private static final String BG2_MAIN_CLASS = "com.direwolf20.buildinggadgets2.BuildingGadgets2";
 
     private static final AtomicBoolean PROBED = new AtomicBoolean(false);
-    private static volatile boolean cachedResult = false;
-    private static volatile boolean lastReportedState = false;
+    private static volatile boolean cachedWorldEdit = false;
+    private static volatile boolean cachedBg2 = false;
+    private static volatile boolean lastReportedWe = false;
+    private static volatile boolean lastReportedBg2 = false;
 
     private ModDetection() {}
 
@@ -42,7 +48,16 @@ public final class ModDetection {
      *         force a fresh probe.
      */
     public static boolean isWorldEditLoaded() {
-        if (PROBED.get()) return cachedResult;
+        if (PROBED.get()) return cachedWorldEdit;
+        return doProbe();
+    }
+
+    /**
+     * @return true iff Building Gadgets 2 is loaded. Same caching /
+     *         invalidation rules as {@link #isWorldEditLoaded()}.
+     */
+    public static boolean isBuildingGadgets2Loaded() {
+        if (PROBED.get()) return cachedBg2;
         return doProbe();
     }
 
@@ -59,31 +74,44 @@ public final class ModDetection {
     }
 
     private static synchronized boolean doProbe() {
-        if (PROBED.get()) return cachedResult;  // double-checked
-        String via = probeViaModList();
-        boolean found = (via != null) || probeViaClasspath();
-        cachedResult = found;
+        if (PROBED.get()) return cachedWorldEdit;  // double-checked
+        String weVia = probeModViaModList(WORLDEDIT_MOD_ID);
+        boolean we = (weVia != null) || probeClasspath("com.sk89q.worldedit.WorldEdit");
+        String bg2Via = probeModViaModList(BG2_MOD_ID);
+        boolean bg2 = (bg2Via != null) || probeClasspath(BG2_MAIN_CLASS);
+        cachedWorldEdit = we;
+        cachedBg2 = bg2;
         PROBED.set(true);
-        // Log exactly once on the false↔true transition.
-        if (found != lastReportedState) {
-            if (found) {
+
+        // Log exactly once on the false↔true transition for each mod.
+        if (we != lastReportedWe) {
+            if (we) {
                 LogUtil.info("[BlockPrintLink/Bridge] WorldEdit detected"
-                    + (via != null ? " (via " + via + ")" : " (via classpath)")
+                    + (weVia != null ? " (via " + weVia + ")" : " (via classpath)")
                     + " — watching config/worldedit/schematics");
             } else {
                 LogUtil.info("[BlockPrintLink/Bridge] WorldEdit not loaded");
             }
-            lastReportedState = found;
+            lastReportedWe = we;
         }
-        return found;
+        if (bg2 != lastReportedBg2) {
+            if (bg2) {
+                LogUtil.info("[BlockPrintLink/Bridge] Building Gadgets 2 detected"
+                    + (bg2Via != null ? " (via " + bg2Via + ")" : " (via classpath)"));
+            } else {
+                LogUtil.info("[BlockPrintLink/Bridge] Building Gadgets 2 not loaded");
+            }
+            lastReportedBg2 = bg2;
+        }
+        return cachedWorldEdit;
     }
 
     /**
-     * Try each loader's canonical mod-list API. Returns the loader name
-     * on success (so the transition log can show which path worked),
-     * or {@code null} if no API is reachable.
+     * Try each loader's canonical mod-list API for the given mod id.
+     * Returns the loader name on success, or {@code null} if no API is
+     * reachable for any loader.
      */
-    private static String probeViaModList() {
+    private static String probeModViaModList(String modId) {
         ClassLoader probeLoader = ModDetection.class.getClassLoader();
         String[] modListClasses = {
             "net.neoforged.fml.ModList",      // NeoForge 1.20.2+
@@ -95,7 +123,7 @@ public final class ModDetection {
                 Class<?> cls = Class.forName(modListClasses[i], false, probeLoader);
                 Object modList = cls.getMethod("get").invoke(null);
                 Object isLoaded = cls.getMethod("isLoaded", String.class)
-                    .invoke(modList, WORLDEDIT_MOD_ID);
+                    .invoke(modList, modId);
                 if (Boolean.TRUE.equals(isLoaded)) return modListNames[i];
             } catch (Throwable ignored) {}
         }
@@ -104,7 +132,7 @@ public final class ModDetection {
             Class<?> cls = Class.forName("net.fabricmc.loader.api.FabricLoader", false, probeLoader);
             Object inst = cls.getMethod("getInstance").invoke(null);
             Object isLoaded = cls.getMethod("isModLoaded", String.class)
-                .invoke(inst, WORLDEDIT_MOD_ID);
+                .invoke(inst, modId);
             if (Boolean.TRUE.equals(isLoaded)) return "Fabric FabricLoader";
         } catch (Throwable ignored) {}
         try {
@@ -113,7 +141,7 @@ public final class ModDetection {
                 Class<?> cls = Class.forName("net.fabricmc.loader.api.FabricLoader", false, ctx);
                 Object inst = cls.getMethod("getInstance").invoke(null);
                 Object isLoaded = cls.getMethod("isModLoaded", String.class)
-                    .invoke(inst, WORLDEDIT_MOD_ID);
+                    .invoke(inst, modId);
                 if (Boolean.TRUE.equals(isLoaded)) return "Fabric FabricLoader (via ctx loader)";
             }
         } catch (Throwable ignored) {}
@@ -122,13 +150,13 @@ public final class ModDetection {
 
     /**
      * Last-resort classpath probe. Walks up the classloader chain to
-     * find one that has the WE main class on it.
+     * find one that has the given fully-qualified class on it.
      */
-    private static boolean probeViaClasspath() {
+    private static boolean probeClasspath(String fqcn) {
         ClassLoader cl = ModDetection.class.getClassLoader();
         while (cl != null) {
             try {
-                Class.forName("com.sk89q.worldedit.WorldEdit", false, cl);
+                Class.forName(fqcn, false, cl);
                 return true;
             } catch (Throwable ignored) {}
             cl = cl.getParent();

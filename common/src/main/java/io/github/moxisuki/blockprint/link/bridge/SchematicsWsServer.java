@@ -1,5 +1,6 @@
 package io.github.moxisuki.blockprint.link.bridge;
 
+import io.github.moxisuki.blockprint.link.LitematicMod;
 import io.github.moxisuki.blockprint.link.LogUtil;
 
 import io.github.moxisuki.blockprint.link.schematic.SchematicScanner;
@@ -446,6 +447,19 @@ public final class SchematicsWsServer {
                 + MiniJson.quote(requestId)
                 + ",\"fileName\":" + MiniJson.quote(fileName)
                 + ",\"sha256\":\"" + actualSha + "\"}");
+
+            // If Building Gadgets 2 is loaded, push an in-game chat hint
+            // so the player knows the bridge just received a blueprint
+            // and where it landed. Best-effort — never fail the upload
+            // because the chat broadcast failed.
+            if (ModDetection.isBuildingGadgets2Loaded()) {
+                try {
+                    LitematicMod.broadcastToCurrentPlayer(
+                        "blockprintlink.chat.bg2_uploaded",
+                        fileName,
+                        session.uploadTarget.getAbsolutePath());
+                } catch (Throwable ignored) {}
+            }
         } catch (IOException e) {
             LogUtil.error("[BlockPrintLink/Bridge] Upload IO error [" + requestId + "]: " + fileName
                 + " -> " + session.uploadTarget.getAbsolutePath(), e);
