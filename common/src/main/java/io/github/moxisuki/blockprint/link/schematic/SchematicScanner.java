@@ -4,6 +4,7 @@ import io.github.moxisuki.blockprint.core.Litematic;
 import io.github.moxisuki.blockprint.core.LitematicReader;
 import io.github.moxisuki.blockprint.core.LitematicRegion;
 import io.github.moxisuki.blockprint.core.SchematicFormat;
+import io.github.moxisuki.blockprint.link.bridge.ModDetection;
 import net.minecraft.network.chat.Component;
 
 import java.io.File;
@@ -22,12 +23,12 @@ import java.util.stream.Stream;
  */
 public final class SchematicScanner {
 
-    public static final String FORMAT_LITEMATIC = "litematic";
-    public static final String FORMAT_SCHEMATIC = "schematic";
-
     public static final String SCHEMATICS_SUBDIR = "schematics";
     public static final String SOURCE_SCHEMATICS = "schematics";
     public static final String SOURCE_SAVES_PREFIX = "saves/";
+    /** WorldEdit's default schematics directory (relative to gameDir). */
+    public static final String WORLDEDIT_SCHEMATICS_SUBDIR = "config/worldedit/schematics";
+    public static final String SOURCE_WORLDEDIT = "worldedit";
 
     private static final int DESCRIPTION_MAX = 60;
     private static final int ERROR_MAX = 100;
@@ -58,12 +59,17 @@ public final class SchematicScanner {
     }
 
     /**
-     * Scan all schematic sources: schematics/ directory and vanilla structure exports.
+     * Scan all schematic sources: schematics/ directory, vanilla structure
+     * exports, and WorldEdit's config/worldedit/schematics directory (when
+     * WorldEdit is detected on the classpath).
      */
     public static List<Entry> scanAll(File gameDir) {
         List<Entry> out = new ArrayList<>();
         out.addAll(scanSchematics(gameDir));
         out.addAll(scanStructures(gameDir));
+        if (ModDetection.isWorldEditLoaded()) {
+            out.addAll(scanWorldEdit(gameDir));
+        }
         return out;
     }
 
@@ -96,6 +102,18 @@ public final class SchematicScanner {
             p = p.getParentFile();
         }
         return out;
+    }
+
+    /**
+     * Scan {@code <gameDir>/config/worldedit/schematics/} — WorldEdit's
+     * default storage location. Returns an empty list when the directory
+     * doesn't exist. The caller ({@link #scanAll}) gates on
+     * {@link ModDetection#isWorldEditLoaded()} so we never probe for WE
+     * classes from here.
+     */
+    public static List<Entry> scanWorldEdit(File gameDir) {
+        File dir = new File(gameDir, WORLDEDIT_SCHEMATICS_SUBDIR);
+        return scanDir(dir, SOURCE_WORLDEDIT, dir);
     }
 
     private static void addFromSaves(File savesDir, List<Entry> out, Set<String> seen) {
@@ -158,25 +176,28 @@ public final class SchematicScanner {
 
     private static String formatLabel(SchematicFormat fmt, String lower) {
         return switch (fmt) {
-            case Litematica -> FORMAT_LITEMATIC;
-            case Sponge -> FORMAT_SCHEMATIC;
-            case Structure -> "structure";
-            case BuildingHelper -> "buildhelper";
-            case PartialNbt -> "partial";
+            case Litematica -> SchematicFormat.Litematica.name();
+            case Sponge -> SchematicFormat.Sponge.name();
+            case Structure -> SchematicFormat.Structure.name();
+            case BuildingHelper -> SchematicFormat.BuildingHelper.name();
+            case PartialNbt -> SchematicFormat.PartialNbt.name();
             case Unknown -> fallbackFormat(lower);
         };
     }
 
     private static String fallbackFormat(String lower) {
-        if (lower.endsWith("." + FORMAT_SCHEMATIC)) return FORMAT_SCHEMATIC;
-        if (lower.endsWith(".nbt")) return "nbt";
-        return FORMAT_LITEMATIC;
+        if (lower.endsWith(".litematic")) return SchematicFormat.Litematica.name();
+        if (lower.endsWith(".schem") || lower.endsWith(".schematic")) return SchematicFormat.Sponge.name();
+        if (lower.endsWith(".nbt")) return SchematicFormat.Structure.name();
+        if (lower.endsWith(".json")) return SchematicFormat.BuildingHelper.name();
+        return SchematicFormat.Unknown.name();
     }
 
     private static boolean isBlueprintFile(Path p) {
         String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
-        return name.endsWith("." + FORMAT_LITEMATIC)
-            || name.endsWith("." + FORMAT_SCHEMATIC)
+        return name.endsWith(".litematic")
+            || name.endsWith(".schem")
+            || name.endsWith(".schematic")
             || name.endsWith(".nbt")
             || name.endsWith(".json")
             || !name.contains(".");
