@@ -65,7 +65,7 @@ Sec-WebSocket-Version: 13
   "entries": [
     {
       "fileName": "house.litematic",
-      "format": "litematic",
+      "format": "Litematica",
       "name": "Beach House",
       "width": 32, "height": 64, "depth": 32,
       "blocks": 1234,
@@ -78,7 +78,7 @@ Sec-WebSocket-Version: 13
     },
     {
       "fileName": "igloo.nbt",
-      "format": "structure",
+      "format": "Structure",
       "name": "igloo",
       "width": 8, "height": 5, "depth": 8,
       "blocks": 47,
@@ -110,6 +110,13 @@ Sec-WebSocket-Version: 13
 ← {"type":"upload/result","fileName":"new.litematic","ok":true}
 ```
 
+上传按扩展名自动路由到合适的目录,客户端无需指定路径:
+
+| 文件名后缀 | 目标目录 | 备注 |
+|---|---|---|
+| `.schem` / `.schematic` (Sponge 格式) | `<gameDir>/config/worldedit/schematics/` | 仅当 WorldEdit 已加载;目录不存在则自动创建;创建失败回退到 `schematics/` |
+| `.litematic` / `.nbt` / `.json` / 无后缀 | `<gameDir>/schematics/` | 默认目标 |
+
 **文件变更推送**（服务端主动发）：
 ```json
 ← {
@@ -136,7 +143,7 @@ Sec-WebSocket-Version: 13
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `fileName` | string | 文件名 |
-| `format` | string | `litematic` / `schematic` |
+| `format` | string | Canonical `SchematicFormat` enum name: `Litematica` / `Sponge` / `Structure` / `BuildingHelper` / `PartialNbt` / `Unknown` |
 | `name` | string | 文件内元数据名称 |
 | `width/height/depth` | int | 尺寸（主区域） |
 | `blocks` | int | 非空气方块数 |
@@ -145,7 +152,7 @@ Sec-WebSocket-Version: 13
 | `minecraftDataVersion` | int\|null | MC 数据版本（.litematic 有、Sponge .schematic 无） |
 | `version` | int\|null | 文件格式版本（.litematic 有） |
 | `regions` | int | 区域数 |
-| `source` | string | 来源标识 — `"schematics"`（根目录）或 `"saves/<世界名>"`（存档结构导出）|
+| `source` | string | 来源标识 — `"schematics"`（根目录）、`"saves/<世界名>"`（存档结构导出）、`"worldedit"`（WorldEdit 的 `config/worldedit/schematics/`，仅当 WorldEdit 加载时存在）|
 
 ### 2.6 错误码
 
@@ -168,6 +175,19 @@ Sec-WebSocket-Version: 13
 - 单文件 ≤ 100 MB
 - 上传并发：每连接最多一个进行中
 - 连接数：无上限
+
+### 2.8 WorldEdit 集成
+
+当 [WorldEdit](https://enginehub.org/worldedit/) 加载时，bridge 自动监听其默认 schematic 目录：
+
+```
+<gameDir>/config/worldedit/schematics/
+```
+
+- **检测方式**：运行时 classpath 探测 `com.sk89q.worldedit.WorldEdit`，不读取版本号 —— 任何兼容版本都启用。
+- **不引入依赖**：WorldEdit **不**作为 build.gradle 依赖，仅在运行时按需读取。
+- **父目录联动**：同时监听 `config/worldedit/` 父目录；WorldEdit 在首次保存时创建 `/schematics/` 子目录，会被现有的 chain-watch 自动接管。
+- **来源标识**：被这些目录收录的文件在 `source` 字段标记为 `"worldedit"`。
 
 ## 3. UDP 广播发现
 
