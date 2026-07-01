@@ -4,7 +4,15 @@ plugins {
 }
 
 base {
-    archivesName = "${mod_id}-${project.name}-${minecraft_version}"
+    // `project.name` already includes the MC version (e.g. "neoforge-1_21_1")
+    // since it's the subproject folder name from settings.gradle. The
+    // previous pattern also appended `minecraft_version` (e.g. "1.21.1"),
+    // producing duplicated version segments in the jar filename:
+    //   blockprintlink-neoforge-1_21_1-1.21.1-0.2.1.jar
+    //                ^^^^^^^^^^^^^ ^^^^^
+    //                project.name  minecraft_version (redundant)
+    // Drop the trailing version — the subproject name is the canonical one.
+    archivesName = "${mod_id}-${project.name}"
 }
 
 java {
