@@ -10,6 +10,7 @@ authors = "${mod_author}"
 description = '''
 ${description}
 '''
+logoFile = "icon.png"
 
 [[mixins]]
 config = "${mod_id}.mixins.json"

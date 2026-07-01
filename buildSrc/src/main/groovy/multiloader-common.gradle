@@ -82,6 +82,12 @@ jar {
 }
 
 processResources {
+    // Force UTF-8 for the placeholder expansion. Gradle still reads
+    // `gradle.properties` via Properties.load(InputStream) which is
+    // hard-coded ISO-8859-1 (Java spec; file.encoding doesn't help), so
+    // keep `gradle.properties` ASCII-only and put any non-ASCII
+    // description text directly into the mods.toml template if needed.
+    filteringCharset = 'UTF-8'
     var expandProps = [
             'version'                      : version,
             'group'                        : project.group, //Else we target the task's group.
